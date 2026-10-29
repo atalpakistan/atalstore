@@ -3,6 +3,7 @@ import { safeFetchJson } from './utils/api';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 import { Header } from './components/Header';
 import { Footer } from './components/Footer';
@@ -367,7 +368,9 @@ export default function App() {
     <AuthProvider>
       <CartProvider>
         <WishlistProvider>
-          <StorefrontApp />
+          <ErrorBoundary>
+            <StorefrontApp />
+          </ErrorBoundary>
         </WishlistProvider>
       </CartProvider>
     </AuthProvider>

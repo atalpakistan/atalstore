@@ -61,7 +61,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="md:hidden p-2 text-white/90 hover:text-amber-300 rounded-lg hover:bg-emerald-900/40 transition"
+              className="md:hidden p-3 -ml-2 text-white/90 hover:text-amber-300 rounded-lg hover:bg-emerald-900/40 transition"
               aria-label="Toggle menu"
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -112,7 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
             {/* Mobile Search Icon */}
             <button
               onClick={onOpenSearch}
-              className="sm:hidden p-2 text-white/90 hover:text-amber-300 rounded-lg transition"
+              className="sm:hidden p-3 -mr-2 text-white/90 hover:text-amber-300 rounded-lg transition"
               aria-label="Search products"
             >
               <Search className="w-5 h-5" />
