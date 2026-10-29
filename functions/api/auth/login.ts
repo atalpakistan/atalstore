@@ -32,8 +32,17 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
     const cleanEmail = String(email).trim().toLowerCase();
     const rawPass = String(password).trim();
 
+    // Initialize global staff password store if missing
+    if (!(globalThis as any).__ATAL_STAFF_PASSWORDS__) {
+      (globalThis as any).__ATAL_STAFF_PASSWORDS__ = {
+        'uatal.pk@gmail.com': 'Umer@9157',
+        'ali@atal.com': 'Ali@297'
+      };
+    }
+    const staffPasses = (globalThis as any).__ATAL_STAFF_PASSWORDS__;
+
     // Staff & Administrator Auth Checks
-    if (cleanEmail === 'uatal.pk@gmail.com' && rawPass === 'Umer@9157') {
+    if (cleanEmail === 'uatal.pk@gmail.com' && rawPass === (staffPasses['uatal.pk@gmail.com'] || 'Umer@9157')) {
       const user = {
         id: 'usr_admin_uatal',
         email: 'uatal.pk@gmail.com',
@@ -45,7 +54,7 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
       return jsonResponse({ user, token }, 200);
     }
 
-    if (cleanEmail === 'ali@atal.com' && rawPass === 'Ali@297') {
+    if (cleanEmail === 'ali@atal.com' && rawPass === (staffPasses['ali@atal.com'] || 'Ali@297')) {
       const user = {
         id: 'usr_emp_ali',
         email: 'ali@atal.com',
