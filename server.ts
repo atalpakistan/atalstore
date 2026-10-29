@@ -20,6 +20,20 @@ async function startServer() {
   // Mount API router
   app.use('/api', apiRouter);
 
+  // Unmatched /api routes fallback to JSON 404
+  app.use('/api/*', (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl || req.url}` });
+  });
+
+  // Global API error handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (req.path.startsWith('/api')) {
+      console.error('API Error:', err);
+      return res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
+    }
+    next(err);
+  });
+
   if (!isProd) {
     // Mount Vite dev server middlewares
     const { createServer } = await import('vite');

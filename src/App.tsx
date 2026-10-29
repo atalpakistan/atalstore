@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeFetchJson } from './utils/api';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
@@ -57,9 +58,8 @@ function StorefrontApp() {
   // Fetch Homepage Data
   const fetchHomepage = async () => {
     try {
-      const res = await fetch('/api/homepage');
-      if (res.ok) {
-        const data = await res.json();
+      const { ok, data } = await safeFetchJson<HomepagePayload>('/api/homepage');
+      if (ok && data) {
         setHomepageData(data);
       }
     } catch {

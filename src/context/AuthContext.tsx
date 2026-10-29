@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { safeFetchJson } from '../utils/api';
 import { User } from '../types';
 
 interface AuthContextType {
@@ -33,11 +34,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
       try {
-        const res = await fetch('/api/auth/me', {
+        const { ok, data } = await safeFetchJson('/api/auth/me', {
           headers: { Authorization: `Bearer ${token}` }
         });
-        if (res.ok) {
-          const data = await res.json();
+        if (ok && data?.user) {
           setUser(data.user);
         } else {
           localStorage.removeItem('atal_auth_token');
@@ -55,14 +55,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, pass: string) => {
     try {
-      const res = await fetch('/api/auth/login', {
+      const { ok, data, error } = await safeFetchJson('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password: pass })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to sign in' };
+      if (!ok || !data) {
+        return { success: false, error: error || 'Failed to sign in' };
       }
       localStorage.setItem('atal_auth_token', data.token);
       setToken(data.token);
@@ -76,14 +75,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const register = async (name: string, email: string, pass: string, confirm_pass: string, phone: string) => {
     try {
-      const res = await fetch('/api/auth/register', {
+      const { ok, data, error } = await safeFetchJson('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ full_name: name, email, password: pass, confirm_password: confirm_pass, phone })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Failed to create account' };
+      if (!ok || !data) {
+        return { success: false, error: error || 'Failed to create account' };
       }
       localStorage.setItem('atal_auth_token', data.token);
       setToken(data.token);

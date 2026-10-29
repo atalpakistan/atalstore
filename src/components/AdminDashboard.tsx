@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeFetchJson } from '../utils/api';
 import {
   LayoutDashboard, Package, Grid, ShoppingCart, Image, Sparkles,
   Settings, Download, Upload, Clock, Ticket, Shield, RefreshCw,
@@ -108,89 +109,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // 1. Fetch Metrics
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
-    try {
-      const res = await fetch('/api/admin/metrics', { headers: authHeaders });
-      if (res.ok) setMetrics(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/metrics', { headers: authHeaders });
+    if (ok && data) setMetrics(data);
     setLoadingMetrics(false);
   };
 
   // 2. Fetch Products
   const fetchProducts = async () => {
-    try {
-      const res = await fetch('/api/admin/products', { headers: authHeaders });
-      if (res.ok) setProducts(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/products', { headers: authHeaders });
+    if (ok && Array.isArray(data)) setProducts(data);
   };
 
   // 3. Fetch Categories
   const fetchCategories = async () => {
-    try {
-      const res = await fetch('/api/categories');
-      if (res.ok) setCategories(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/categories');
+    if (ok && Array.isArray(data)) setCategories(data);
   };
 
   // 4. Fetch Orders
   const fetchOrders = async () => {
-    try {
-      const res = await fetch('/api/admin/orders', { headers: authHeaders });
-      if (res.ok) setOrders(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/orders', { headers: authHeaders });
+    if (ok && Array.isArray(data)) setOrders(data);
   };
 
   // 5. Fetch Banners
   const fetchBanners = async () => {
-    try {
-      const res = await fetch('/api/admin/banners', { headers: authHeaders });
-      if (res.ok) setBanners(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/banners', { headers: authHeaders });
+    if (ok && Array.isArray(data)) setBanners(data);
   };
 
   // 6. Fetch Homepage Sections
   const fetchSections = async () => {
-    try {
-      const res = await fetch('/api/admin/homepage', { headers: authHeaders });
-      if (res.ok) setSections(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/homepage', { headers: authHeaders });
+    if (ok && Array.isArray(data)) setSections(data);
   };
 
   // 7. Fetch Launch Soon
   const fetchLaunchSoon = async () => {
-    try {
-      const res = await fetch('/api/admin/launch-soon', { headers: authHeaders });
-      if (res.ok) setLaunchSoon(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/launch-soon', { headers: authHeaders });
+    if (ok && Array.isArray(data)) setLaunchSoon(data);
   };
 
   // 8. Fetch Coupons
   const fetchCoupons = async () => {
-    try {
-      const res = await fetch('/api/admin/coupons', { headers: authHeaders });
-      if (res.ok) setCoupons(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/coupons', { headers: authHeaders });
+    if (ok && Array.isArray(data)) setCoupons(data);
   };
 
   // 9. Fetch Settings
   const fetchSettings = async () => {
-    try {
-      const res = await fetch('/api/admin/settings', { headers: authHeaders });
-      if (res.ok) setSettings(await res.json());
-    } catch {}
+    const { ok, data } = await safeFetchJson('/api/admin/settings', { headers: authHeaders });
+    if (ok && data) setSettings(data);
   };
 
   // 10. Fetch Staff Accounts
   const fetchStaff = async () => {
-    try {
-      const res = await fetch('/api/admin/staff', { headers: authHeaders });
-      if (res.ok) {
-        const data = await res.json();
-        setStaffList(data);
-        if (data.length > 0 && !selectedStaffUser) {
-          setSelectedStaffUser(data[0].id);
-        }
+    const { ok, data } = await safeFetchJson<any[]>('/api/admin/staff', { headers: authHeaders });
+    if (ok && Array.isArray(data)) {
+      setStaffList(data);
+      if (data.length > 0 && !selectedStaffUser) {
+        setSelectedStaffUser(data[0].id);
       }
-    } catch {}
+    }
   };
 
   useEffect(() => {
@@ -213,21 +193,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const reader = new FileReader();
     reader.onload = async () => {
       const base64Data = reader.result as string;
-      try {
-        const res = await fetch('/api/admin/upload', {
-          method: 'POST',
-          headers: authHeaders,
-          body: JSON.stringify({ filename: file.name, base64Data })
-        });
-        const data = await res.json();
-        if (res.ok && data.url) {
-          onUploaded(data.url);
-          showFeedback('Image uploaded successfully');
-        } else {
-          showFeedback(data.error || 'Upload failed', 'error');
-        }
-      } catch (err: any) {
-        showFeedback('Upload error: ' + err.message, 'error');
+      const { ok, data, error } = await safeFetchJson('/api/admin/upload', {
+        method: 'POST',
+        headers: authHeaders,
+        body: JSON.stringify({ filename: file.name, base64Data })
+      });
+      if (ok && data?.url) {
+        onUploaded(data.url);
+        showFeedback('Image uploaded successfully');
+      } else {
+        showFeedback(error || 'Upload failed', 'error');
       }
     };
     reader.readAsDataURL(file);
@@ -237,42 +212,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCategory) return;
-    try {
-      const isNew = !editingCategory.id;
-      const url = isNew ? '/api/admin/categories' : `/api/admin/categories/${editingCategory.id}`;
-      const method = isNew ? 'POST' : 'PUT';
-      const res = await fetch(url, {
-        method,
-        headers: authHeaders,
-        body: JSON.stringify(editingCategory)
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to save category', 'error');
-      } else {
-        showFeedback(isNew ? 'Category created' : 'Category updated');
-        setIsCategoryModalOpen(false);
-        setEditingCategory(null);
-        fetchCategories();
-      }
-    } catch (err: any) {
-      showFeedback(err.message, 'error');
+    const isNew = !editingCategory.id;
+    const url = isNew ? '/api/admin/categories' : `/api/admin/categories/${editingCategory.id}`;
+    const method = isNew ? 'POST' : 'PUT';
+    const { ok, error } = await safeFetchJson(url, {
+      method,
+      headers: authHeaders,
+      body: JSON.stringify(editingCategory)
+    });
+    if (!ok) {
+      showFeedback(error || 'Failed to save category', 'error');
+    } else {
+      showFeedback(isNew ? 'Category created' : 'Category updated');
+      setIsCategoryModalOpen(false);
+      setEditingCategory(null);
+      fetchCategories();
     }
   };
 
   const handleDeleteCategory = async (id: string) => {
     if (!confirm('Delete this category?')) return;
-    try {
-      const res = await fetch(`/api/admin/categories/${id}`, { method: 'DELETE', headers: authHeaders });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to delete category', 'error');
-      } else {
-        showFeedback('Category deleted');
-        fetchCategories();
-      }
-    } catch (err: any) {
-      showFeedback(err.message, 'error');
+    const { ok, error } = await safeFetchJson(`/api/admin/categories/${id}`, { method: 'DELETE', headers: authHeaders });
+    if (!ok) {
+      showFeedback(error || 'Failed to delete category', 'error');
+    } else {
+      showFeedback('Category deleted');
+      fetchCategories();
     }
   };
 
@@ -280,39 +245,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveBanner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingBanner) return;
-    try {
-      const isNew = !editingBanner.id;
-      const url = isNew ? '/api/admin/banners' : `/api/admin/banners/${editingBanner.id}`;
-      const method = isNew ? 'POST' : 'PUT';
-      const res = await fetch(url, {
-        method,
-        headers: authHeaders,
-        body: JSON.stringify(editingBanner)
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to save banner', 'error');
-      } else {
-        showFeedback(isNew ? 'Banner created' : 'Banner updated');
-        setIsBannerModalOpen(false);
-        setEditingBanner(null);
-        fetchBanners();
-      }
-    } catch (err: any) {
-      showFeedback(err.message, 'error');
+    const isNew = !editingBanner.id;
+    const url = isNew ? '/api/admin/banners' : `/api/admin/banners/${editingBanner.id}`;
+    const method = isNew ? 'POST' : 'PUT';
+    const { ok, error } = await safeFetchJson(url, {
+      method,
+      headers: authHeaders,
+      body: JSON.stringify(editingBanner)
+    });
+    if (!ok) {
+      showFeedback(error || 'Failed to save banner', 'error');
+    } else {
+      showFeedback(isNew ? 'Banner created' : 'Banner updated');
+      setIsBannerModalOpen(false);
+      setEditingBanner(null);
+      fetchBanners();
     }
   };
 
   const handleDeleteBanner = async (id: string) => {
     if (!confirm('Delete this banner?')) return;
-    try {
-      const res = await fetch(`/api/admin/banners/${id}`, { method: 'DELETE', headers: authHeaders });
-      if (res.ok) {
-        showFeedback('Banner deleted');
-        fetchBanners();
-      }
-    } catch {
-      showFeedback('Failed to delete banner', 'error');
+    const { ok, error } = await safeFetchJson(`/api/admin/banners/${id}`, { method: 'DELETE', headers: authHeaders });
+    if (ok) {
+      showFeedback('Banner deleted');
+      fetchBanners();
+    } else {
+      showFeedback(error || 'Failed to delete banner', 'error');
     }
   };
 
@@ -320,39 +278,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveLaunchSoon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingLaunchSoon) return;
-    try {
-      const isNew = !editingLaunchSoon.id;
-      const url = isNew ? '/api/admin/launch-soon' : `/api/admin/launch-soon/${editingLaunchSoon.id}`;
-      const method = isNew ? 'POST' : 'PUT';
-      const res = await fetch(url, {
-        method,
-        headers: authHeaders,
-        body: JSON.stringify(editingLaunchSoon)
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to save launch soon item', 'error');
-      } else {
-        showFeedback(isNew ? 'Launch Soon item created' : 'Launch Soon item updated');
-        setIsLaunchSoonModalOpen(false);
-        setEditingLaunchSoon(null);
-        fetchLaunchSoon();
-      }
-    } catch (err: any) {
-      showFeedback(err.message, 'error');
+    const isNew = !editingLaunchSoon.id;
+    const url = isNew ? '/api/admin/launch-soon' : `/api/admin/launch-soon/${editingLaunchSoon.id}`;
+    const method = isNew ? 'POST' : 'PUT';
+    const { ok, error } = await safeFetchJson(url, {
+      method,
+      headers: authHeaders,
+      body: JSON.stringify(editingLaunchSoon)
+    });
+    if (!ok) {
+      showFeedback(error || 'Failed to save launch soon item', 'error');
+    } else {
+      showFeedback(isNew ? 'Launch Soon item created' : 'Launch Soon item updated');
+      setIsLaunchSoonModalOpen(false);
+      setEditingLaunchSoon(null);
+      fetchLaunchSoon();
     }
   };
 
   const handleDeleteLaunchSoon = async (id: string) => {
     if (!confirm('Delete this upcoming drop?')) return;
-    try {
-      const res = await fetch(`/api/admin/launch-soon/${id}`, { method: 'DELETE', headers: authHeaders });
-      if (res.ok) {
-        showFeedback('Launch Soon item deleted');
-        fetchLaunchSoon();
-      }
-    } catch {
-      showFeedback('Failed to delete launch soon item', 'error');
+    const { ok, error } = await safeFetchJson(`/api/admin/launch-soon/${id}`, { method: 'DELETE', headers: authHeaders });
+    if (ok) {
+      showFeedback('Launch Soon item deleted');
+      fetchLaunchSoon();
+    } else {
+      showFeedback(error || 'Failed to delete launch soon item', 'error');
     }
   };
 
@@ -373,50 +324,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
 
     setChangingPassword(true);
-    try {
-      const res = await fetch('/api/admin/staff/update-password', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
-          user_id: selectedStaffUser,
-          new_password: newStaffPassword,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to update staff password', 'error');
-      } else {
-        showFeedback(data.message || 'Staff password successfully updated!');
-        setNewStaffPassword('');
-        setConfirmStaffPassword('');
-        fetchStaff();
-      }
-    } catch (err: any) {
-      showFeedback(err.message || 'Error updating password', 'error');
-    } finally {
-      setChangingPassword(false);
+    const { ok, data, error } = await safeFetchJson('/api/admin/staff/update-password', {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        user_id: selectedStaffUser,
+        new_password: newStaffPassword,
+      }),
+    });
+    setChangingPassword(false);
+
+    if (!ok) {
+      showFeedback(error || 'Failed to update staff password', 'error');
+    } else {
+      showFeedback(data?.message || 'Staff password successfully updated!');
+      setNewStaffPassword('');
+      setConfirmStaffPassword('');
+      fetchStaff();
     }
   };
 
   const handleResetToDefaults = async () => {
     setResettingDefaults(true);
-    try {
-      const res = await fetch('/api/admin/staff/reset-defaults', {
-        method: 'POST',
-        headers: authHeaders,
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to reset default credentials', 'error');
-      } else {
-        showFeedback(data.message || 'Default passwords restored successfully!');
-        setShowResetConfirmModal(false);
-        fetchStaff();
-      }
-    } catch (err: any) {
-      showFeedback(err.message || 'Error resetting credentials', 'error');
-    } finally {
-      setResettingDefaults(false);
+    const { ok, data, error } = await safeFetchJson('/api/admin/staff/reset-defaults', {
+      method: 'POST',
+      headers: authHeaders,
+    });
+    setResettingDefaults(false);
+
+    if (!ok) {
+      showFeedback(error || 'Failed to reset default credentials', 'error');
+    } else {
+      showFeedback(data?.message || 'Default passwords restored successfully!');
+      setShowResetConfirmModal(false);
+      fetchStaff();
     }
   };
 
@@ -425,96 +366,83 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     if (!editingProduct) return;
 
-    try {
-      const isNew = !editingProduct.id;
-      const url = isNew ? '/api/admin/products' : `/api/admin/products/${editingProduct.id}`;
-      const method = isNew ? 'POST' : 'PUT';
+    const isNew = !editingProduct.id;
+    const url = isNew ? '/api/admin/products' : `/api/admin/products/${editingProduct.id}`;
+    const method = isNew ? 'POST' : 'PUT';
 
-      const res = await fetch(url, {
-        method,
-        headers: authHeaders,
-        body: JSON.stringify(editingProduct),
-      });
+    const { ok, error } = await safeFetchJson(url, {
+      method,
+      headers: authHeaders,
+      body: JSON.stringify(editingProduct),
+    });
 
-      const data = await res.json();
-      if (!res.ok) {
-        showFeedback(data.error || 'Failed to save product', 'error');
-        return;
-      }
-
-      showFeedback(isNew ? 'Product created successfully' : 'Product updated permanently');
-      setIsProductModalOpen(false);
-      setEditingProduct(null);
-      fetchProducts();
-    } catch (err: any) {
-      showFeedback(err.message || 'Error saving product', 'error');
+    if (!ok) {
+      showFeedback(error || 'Failed to save product', 'error');
+      return;
     }
+
+    showFeedback(isNew ? 'Product created successfully' : 'Product updated permanently');
+    setIsProductModalOpen(false);
+    setEditingProduct(null);
+    fetchProducts();
   };
 
   const handleDeleteProduct = async (id: string) => {
     if (!confirm('Are you sure you want to permanently delete this product?')) return;
-    try {
-      const res = await fetch(`/api/admin/products/${id}`, {
-        method: 'DELETE',
-        headers: authHeaders,
-      });
-      if (res.ok) {
-        showFeedback('Product deleted from database');
-        fetchProducts();
-      }
-    } catch {
-      showFeedback('Failed to delete product', 'error');
+    const { ok, error } = await safeFetchJson(`/api/admin/products/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders,
+    });
+    if (ok) {
+      showFeedback('Product deleted from database');
+      fetchProducts();
+    } else {
+      showFeedback(error || 'Failed to delete product', 'error');
     }
   };
 
   const handleDuplicateProduct = async (id: string) => {
-    try {
-      const res = await fetch(`/api/admin/products/${id}/duplicate`, {
-        method: 'POST',
-        headers: authHeaders,
-      });
-      if (res.ok) {
-        showFeedback('Product duplicated successfully');
-        fetchProducts();
-      }
-    } catch {
-      showFeedback('Failed to duplicate product', 'error');
+    const { ok, error } = await safeFetchJson(`/api/admin/products/${id}/duplicate`, {
+      method: 'POST',
+      headers: authHeaders,
+    });
+    if (ok) {
+      showFeedback('Product duplicated successfully');
+      fetchProducts();
+    } else {
+      showFeedback(error || 'Failed to duplicate product', 'error');
     }
   };
 
   // Order Status Update
   const handleUpdateOrderStatus = async (orderId: string, order_status: string, payment_status: string, tracking_number?: string, tracking_courier?: string) => {
-    try {
-      const res = await fetch(`/api/admin/orders/${orderId}`, {
-        method: 'PUT',
-        headers: authHeaders,
-        body: JSON.stringify({ order_status, payment_status, tracking_number, tracking_courier })
-      });
-      if (res.ok) {
-        showFeedback(`Order ${orderId} status updated to ${order_status}`);
-        fetchOrders();
-        if (selectedOrder) {
-          setSelectedOrder({ ...selectedOrder, order_status: order_status as any, payment_status: payment_status as any, tracking_number, tracking_courier });
-        }
+    const { ok, error } = await safeFetchJson(`/api/admin/orders/${orderId}`, {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify({ order_status, payment_status, tracking_number, tracking_courier })
+    });
+    if (ok) {
+      showFeedback(`Order ${orderId} status updated to ${order_status}`);
+      fetchOrders();
+      if (selectedOrder) {
+        setSelectedOrder({ ...selectedOrder, order_status: order_status as any, payment_status: payment_status as any, tracking_number, tracking_courier });
       }
-    } catch {
-      showFeedback('Failed to update order status', 'error');
+    } else {
+      showFeedback(error || 'Failed to update order status', 'error');
     }
   };
 
   // Save Homepage Sections
   const handleSaveSections = async () => {
-    try {
-      const res = await fetch('/api/admin/homepage', {
-        method: 'PUT',
-        headers: authHeaders,
-        body: JSON.stringify({ sections })
-      });
-      if (res.ok) {
-        showFeedback('Homepage section settings saved permanently');
-      }
-    } catch {
-      showFeedback('Failed to update homepage settings', 'error');
+    const { ok, error } = await safeFetchJson('/api/admin/homepage', {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify({ sections })
+    });
+    if (ok) {
+      showFeedback('Homepage section settings saved permanently');
+    } else {
+      showFeedback(error || 'Failed to update homepage settings', 'error');
     }
   };
 
@@ -522,19 +450,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingSettings(true);
-    try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'PUT',
-        headers: authHeaders,
-        body: JSON.stringify(settings)
-      });
-      if (res.ok) {
-        showFeedback('Global settings updated and persisted');
-      }
-    } catch {
-      showFeedback('Failed to save settings', 'error');
-    } finally {
-      setSavingSettings(false);
+    const { ok, error } = await safeFetchJson('/api/admin/settings', {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify(settings)
+    });
+    setSavingSettings(false);
+    if (ok) {
+      showFeedback('Global settings updated and persisted');
+    } else {
+      showFeedback(error || 'Failed to save settings', 'error');
     }
   };
 
@@ -542,24 +467,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCouponCode.trim()) return;
-    try {
-      const res = await fetch('/api/admin/coupons', {
-        method: 'POST',
-        headers: authHeaders,
-        body: JSON.stringify({
-          code: newCouponCode.trim(),
-          discount_type: newCouponType,
-          discount_value: Number(newCouponVal),
-          min_order_amount: Number(newCouponMin)
-        })
-      });
-      if (res.ok) {
-        showFeedback(`Coupon ${newCouponCode} created`);
-        setNewCouponCode('');
-        fetchCoupons();
-      }
-    } catch {
-      showFeedback('Failed to create coupon', 'error');
+    const { ok, error } = await safeFetchJson('/api/admin/coupons', {
+      method: 'POST',
+      headers: authHeaders,
+      body: JSON.stringify({
+        code: newCouponCode.trim(),
+        discount_type: newCouponType,
+        discount_value: Number(newCouponVal),
+        min_order_amount: Number(newCouponMin)
+      })
+    });
+    if (ok) {
+      showFeedback(`Coupon ${newCouponCode} created`);
+      setNewCouponCode('');
+      fetchCoupons();
+    } else {
+      showFeedback(error || 'Failed to create coupon', 'error');
     }
   };
 
@@ -571,16 +494,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleImportBackup = async (dryRun = false) => {
     try {
       const parsed = JSON.parse(backupJson);
-      const res = await fetch('/api/admin/backup/import', {
+      const { ok, data, error } = await safeFetchJson('/api/admin/backup/import', {
         method: 'POST',
         headers: authHeaders,
         body: JSON.stringify({ backupData: parsed, dryRun })
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setImportStatus(`Import Error: ${data.error}`);
+      if (!ok) {
+        setImportStatus(`Import Error: ${error}`);
       } else {
-        setImportStatus(data.message);
+        setImportStatus(data?.message || 'Restore completed');
         if (!dryRun) {
           showFeedback('Database successfully restored from backup!');
           fetchMetrics();
