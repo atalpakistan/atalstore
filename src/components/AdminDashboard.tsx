@@ -595,6 +595,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Persistence Diagnostic Test
+  const runPersistenceDiagnostic = async () => {
+    showFeedback('Starting persistence diagnostic test...', 'success');
+    try {
+      // 1. Get current settings
+      const { ok: ok1, data: originalSettings } = await safeFetchJson('/api/admin/settings', { headers: authHeaders });
+      if (!ok1 || !originalSettings) throw new Error('Failed to fetch initial settings');
+      
+      const testKey = 'store_name';
+      const originalValue = originalSettings[testKey];
+      const testValue = `TEST_VAL_${Date.now()}`;
+
+      // 2. PUT test settings
+      const { ok: ok2, error: error2 } = await safeFetchJson('/api/admin/settings', {
+        method: 'PUT',
+        headers: authHeaders,
+        body: JSON.stringify({ ...originalSettings, [testKey]: testValue })
+      });
+      if (!ok2) throw new Error(`PUT request failed: ${error2}`);
+
+      // 3. GET settings immediately
+      const { ok: ok3, data: verifySettings } = await safeFetchJson('/api/admin/settings', { headers: authHeaders });
+      if (!ok3 || !verifySettings) throw new Error('Failed to fetch settings for verification');
+
+      // 4. Verify
+      if (verifySettings[testKey] === testValue) {
+        showFeedback('Success: Data persistence verified!', 'success');
+        // Restore original
+        await safeFetchJson('/api/admin/settings', {
+          method: 'PUT',
+          headers: authHeaders,
+          body: JSON.stringify({ ...originalSettings, [testKey]: originalValue })
+        });
+        fetchSettings();
+      } else {
+        throw new Error('Data mismatch: Update did not persist in database.');
+      }
+    } catch (err: any) {
+      showFeedback(`Diagnostic Failed: ${err.message}`, 'error');
+    }
+  };
+
   const filteredProducts = products.filter((p) =>
     p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
     p.brand.toLowerCase().includes(productSearch.toLowerCase()) ||
@@ -2532,6 +2574,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
 
               {/* Export Box */}
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Diagnostic Persistence Test</h3>
+                  <p className="text-xs text-slate-500">Run a live test to verify database read/write cycles persist.</p>
+                </div>
+                <button
+                  onClick={runPersistenceDiagnostic}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-amber-500 text-slate-900 font-bold text-xs rounded-xl hover:bg-amber-600 transition shadow"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  <span>Run Persistence Test</span>
+                </button>
+              </div>
+
               <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm">Download Complete Database Backup</h3>
