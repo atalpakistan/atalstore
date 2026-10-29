@@ -78,9 +78,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newCouponVal, setNewCouponVal] = useState<number>(10);
   const [newCouponMin, setNewCouponMin] = useState<number>(2000);
 
-  // Settings state
+  // Settings & Saving state
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [savingBanner, setSavingBanner] = useState(false);
+  const [savingLaunchSoon, setSavingLaunchSoon] = useState(false);
+  const [savingCoupon, setSavingCoupon] = useState(false);
+  const [savingSections, setSavingSections] = useState(false);
 
   // Staff & Passwords state
   const [staffList, setStaffList] = useState<any[]>([]);
@@ -212,6 +218,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingCategory) return;
+    if (!editingCategory.name || !editingCategory.name.trim()) {
+      showFeedback('Category name is required', 'error');
+      return;
+    }
+
+    setSavingCategory(true);
     const isNew = !editingCategory.id;
     const url = isNew ? '/api/admin/categories' : `/api/admin/categories/${editingCategory.id}`;
     const method = isNew ? 'POST' : 'PUT';
@@ -220,10 +232,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       headers: authHeaders,
       body: JSON.stringify(editingCategory)
     });
+    setSavingCategory(false);
+
     if (!ok) {
       showFeedback(error || 'Failed to save category', 'error');
     } else {
-      showFeedback(isNew ? 'Category created' : 'Category updated');
+      showFeedback(isNew ? 'Category created permanently' : 'Category updated permanently');
       setIsCategoryModalOpen(false);
       setEditingCategory(null);
       fetchCategories();
@@ -245,6 +259,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveBanner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingBanner) return;
+    if (!editingBanner.title || !editingBanner.title.trim()) {
+      showFeedback('Banner title is required', 'error');
+      return;
+    }
+
+    setSavingBanner(true);
     const isNew = !editingBanner.id;
     const url = isNew ? '/api/admin/banners' : `/api/admin/banners/${editingBanner.id}`;
     const method = isNew ? 'POST' : 'PUT';
@@ -253,10 +273,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       headers: authHeaders,
       body: JSON.stringify(editingBanner)
     });
+    setSavingBanner(false);
+
     if (!ok) {
       showFeedback(error || 'Failed to save banner', 'error');
     } else {
-      showFeedback(isNew ? 'Banner created' : 'Banner updated');
+      showFeedback(isNew ? 'Banner created permanently' : 'Banner updated permanently');
       setIsBannerModalOpen(false);
       setEditingBanner(null);
       fetchBanners();
@@ -278,6 +300,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveLaunchSoon = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingLaunchSoon) return;
+    if (!editingLaunchSoon.product_name || !editingLaunchSoon.product_name.trim()) {
+      showFeedback('Product name is required for upcoming drop', 'error');
+      return;
+    }
+
+    setSavingLaunchSoon(true);
     const isNew = !editingLaunchSoon.id;
     const url = isNew ? '/api/admin/launch-soon' : `/api/admin/launch-soon/${editingLaunchSoon.id}`;
     const method = isNew ? 'POST' : 'PUT';
@@ -286,10 +314,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       headers: authHeaders,
       body: JSON.stringify(editingLaunchSoon)
     });
+    setSavingLaunchSoon(false);
+
     if (!ok) {
       showFeedback(error || 'Failed to save launch soon item', 'error');
     } else {
-      showFeedback(isNew ? 'Launch Soon item created' : 'Launch Soon item updated');
+      showFeedback(isNew ? 'Upcoming drop created permanently' : 'Upcoming drop updated permanently');
       setIsLaunchSoonModalOpen(false);
       setEditingLaunchSoon(null);
       fetchLaunchSoon();
@@ -366,6 +396,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     if (!editingProduct) return;
 
+    if (!editingProduct.name || !editingProduct.name.trim()) {
+      showFeedback('Product name is required', 'error');
+      return;
+    }
+    if (editingProduct.sale_price === undefined || editingProduct.sale_price === null || Number(editingProduct.sale_price) < 0) {
+      showFeedback('Valid sale price is required', 'error');
+      return;
+    }
+    if (!editingProduct.category_id) {
+      showFeedback('Please select a product category', 'error');
+      return;
+    }
+
+    setSavingProduct(true);
     const isNew = !editingProduct.id;
     const url = isNew ? '/api/admin/products' : `/api/admin/products/${editingProduct.id}`;
     const method = isNew ? 'POST' : 'PUT';
@@ -375,9 +419,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       headers: authHeaders,
       body: JSON.stringify(editingProduct),
     });
+    setSavingProduct(false);
 
     if (!ok) {
-      showFeedback(error || 'Failed to save product', 'error');
+      showFeedback(error || 'Failed to save product to database', 'error');
       return;
     }
 
@@ -385,6 +430,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsProductModalOpen(false);
     setEditingProduct(null);
     fetchProducts();
+    fetchMetrics();
   };
 
   const handleDeleteProduct = async (id: string) => {
@@ -396,6 +442,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (ok) {
       showFeedback('Product deleted from database');
       fetchProducts();
+      fetchMetrics();
     } else {
       showFeedback(error || 'Failed to delete product', 'error');
     }
@@ -409,6 +456,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (ok) {
       showFeedback('Product duplicated successfully');
       fetchProducts();
+      fetchMetrics();
     } else {
       showFeedback(error || 'Failed to duplicate product', 'error');
     }
@@ -424,6 +472,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (ok) {
       showFeedback(`Order ${orderId} status updated to ${order_status}`);
       fetchOrders();
+      fetchMetrics();
       if (selectedOrder) {
         setSelectedOrder({ ...selectedOrder, order_status: order_status as any, payment_status: payment_status as any, tracking_number, tracking_courier });
       }
@@ -434,13 +483,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Save Homepage Sections
   const handleSaveSections = async () => {
+    setSavingSections(true);
     const { ok, error } = await safeFetchJson('/api/admin/homepage', {
       method: 'PUT',
       headers: authHeaders,
       body: JSON.stringify({ sections })
     });
+    setSavingSections(false);
+
     if (ok) {
       showFeedback('Homepage section settings saved permanently');
+      fetchSections();
     } else {
       showFeedback(error || 'Failed to update homepage settings', 'error');
     }
@@ -458,6 +511,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSavingSettings(false);
     if (ok) {
       showFeedback('Global settings updated and persisted');
+      fetchSettings();
     } else {
       showFeedback(error || 'Failed to save settings', 'error');
     }
@@ -466,7 +520,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Create Coupon
   const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCouponCode.trim()) return;
+    if (!newCouponCode.trim()) {
+      showFeedback('Coupon code is required', 'error');
+      return;
+    }
+
+    setSavingCoupon(true);
     const { ok, error } = await safeFetchJson('/api/admin/coupons', {
       method: 'POST',
       headers: authHeaders,
@@ -477,8 +536,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         min_order_amount: Number(newCouponMin)
       })
     });
+    setSavingCoupon(false);
+
     if (ok) {
-      showFeedback(`Coupon ${newCouponCode} created`);
+      showFeedback(`Coupon ${newCouponCode.toUpperCase()} created permanently`);
       setNewCouponCode('');
       fetchCoupons();
     } else {
@@ -1219,9 +1280,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl hover:bg-emerald-900 transition shadow"
+                          disabled={savingProduct}
+                          className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl hover:bg-emerald-900 transition shadow disabled:opacity-50 flex items-center gap-2"
                         >
-                          Save Product
+                          {savingProduct && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                          <span>{savingProduct ? 'Saving Record...' : 'Save Product'}</span>
                         </button>
                       </div>
                     </form>
@@ -1385,9 +1448,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </button>
                         <button
                           type="submit"
-                          className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl text-xs shadow"
+                          disabled={savingCategory}
+                          className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl text-xs shadow disabled:opacity-50 flex items-center gap-2"
                         >
-                          Save Category
+                          {savingCategory && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                          <span>{savingCategory ? 'Saving Category...' : 'Save Category'}</span>
                         </button>
                       </div>
                     </form>
@@ -1592,9 +1657,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <button
                   onClick={handleSaveSections}
-                  className="px-5 py-2.5 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-xs rounded-xl shadow transition"
+                  disabled={savingSections}
+                  className="px-5 py-2.5 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-xs rounded-xl shadow transition disabled:opacity-50 flex items-center gap-2"
                 >
-                  Save Section Settings
+                  {savingSections && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{savingSections ? 'Saving Sections...' : 'Save Section Settings'}</span>
                 </button>
               </div>
 
@@ -1782,8 +1849,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button type="button" onClick={() => setIsBannerModalOpen(false)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs">
                           Cancel
                         </button>
-                        <button type="submit" className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl text-xs shadow">
-                          Save Banner
+                        <button
+                          type="submit"
+                          disabled={savingBanner}
+                          className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl text-xs shadow disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {savingBanner && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                          <span>{savingBanner ? 'Saving Banner...' : 'Save Banner'}</span>
                         </button>
                       </div>
                     </form>
@@ -1936,8 +2008,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <button type="button" onClick={() => setIsLaunchSoonModalOpen(false)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs">
                           Cancel
                         </button>
-                        <button type="submit" className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl text-xs shadow">
-                          Save Drop
+                        <button
+                          type="submit"
+                          disabled={savingLaunchSoon}
+                          className="px-5 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl text-xs shadow disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {savingLaunchSoon && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                          <span>{savingLaunchSoon ? 'Saving Drop...' : 'Save Drop'}</span>
                         </button>
                       </div>
                     </form>
@@ -2004,9 +2081,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl hover:bg-emerald-900 transition"
+                  disabled={savingCoupon}
+                  className="px-4 py-2 bg-[#093824] text-amber-300 font-bold rounded-xl hover:bg-emerald-900 transition disabled:opacity-50 flex items-center gap-2"
                 >
-                  Create Coupon
+                  {savingCoupon && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{savingCoupon ? 'Creating...' : 'Create Coupon'}</span>
                 </button>
               </form>
 
@@ -2222,9 +2301,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     type="submit"
                     disabled={savingSettings}
-                    className="px-6 py-2.5 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-xs rounded-xl shadow transition"
+                    className="px-6 py-2.5 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-xs rounded-xl shadow transition disabled:opacity-50 flex items-center gap-2"
                   >
-                    {savingSettings ? 'Saving...' : 'Save All Settings'}
+                    {savingSettings && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                    <span>{savingSettings ? 'Saving Settings...' : 'Save All Settings'}</span>
                   </button>
                 </div>
               </form>
