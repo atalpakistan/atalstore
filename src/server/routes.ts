@@ -1396,9 +1396,13 @@ router.get('/admin/settings', requireAdmin, (req, res) => {
 router.put('/admin/settings', requireAdmin, (req, res) => {
   try {
     const updates = req.body; // Key-value object
+    if (!updates || typeof updates !== 'object' || Array.isArray(updates)) {
+      return res.status(400).json({ error: 'Invalid JSON payload: Object required' });
+    }
+
     const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
     for (const [k, v] of Object.entries(updates)) {
-      stmt.run(k, String(v));
+      stmt.run(k, String(v ?? ''));
     }
 
     db.prepare(`

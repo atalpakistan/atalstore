@@ -141,6 +141,51 @@ export const onRequest = async ({ request, params }: { request: Request; params:
     ]);
   }
 
+  // 8. /api/admin/settings
+  if (endpoint === 'admin/settings') {
+    const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
+    let isAuth = false;
+    if (authHeader) {
+      try {
+        const decoded = atob(authHeader.replace(/^Bearer\s+/i, '').trim());
+        const [, role] = decoded.split(':');
+        if (role === 'admin' || role === 'employee') isAuth = true;
+      } catch {}
+    }
+
+    if (!isAuth) {
+      return jsonResponse({ error: 'Unauthorized: Administrator access required' }, 403);
+    }
+
+    if (!(globalThis as any).__ATAL_SETTINGS__) {
+      (globalThis as any).__ATAL_SETTINGS__ = { ...DEFAULT_SETTINGS };
+    }
+
+    if (request.method === 'GET') {
+      return jsonResponse((globalThis as any).__ATAL_SETTINGS__);
+    }
+
+    if (request.method === 'PUT') {
+      try {
+        const body = await request.json().catch(() => null);
+        if (!body || typeof body !== 'object' || Array.isArray(body)) {
+          return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400);
+        }
+        for (const [k, v] of Object.entries(body)) {
+          if (typeof k === 'string' && k.trim().length > 0) {
+            (globalThis as any).__ATAL_SETTINGS__[k] = String(v ?? '');
+          }
+        }
+        return jsonResponse({ success: true, message: 'Settings saved permanently.' });
+      } catch (err: any) {
+        return jsonResponse({ error: err?.message || 'Failed to update settings' }, 500);
+      }
+    }
+
+    return jsonResponse({ error: 'Method Not Allowed' }, 405, { Allow: 'GET, PUT, OPTIONS' });
+  }
+
   // Unmatched API fallback JSON 404
   return jsonResponse({ error: `API route not found: ${request.method} ${url.pathname}` }, 404);
 };
+
