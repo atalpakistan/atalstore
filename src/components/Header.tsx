@@ -35,7 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   const logoUrl = settings?.header_logo_url || '/assets/aistudio/WhatsApp_Image_2026-09-29_at_12.21.56_PM_187de251.jpeg';
 
   return (
-    <header className="sticky top-0 z-40 w-full shadow-md">
+    <header className="sticky top-0 z-40 w-full shadow-md header-container mobile-friendly-header">
       {/* Top Announcement Bar */}
       {showAnnouncement && settings?.announcement_bar_enabled !== false && (
         <div className="bg-[#052215] text-amber-200 text-xs py-1.5 px-4 flex items-center justify-between border-b border-emerald-900/50">
@@ -55,7 +55,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Main Dark Green Navigation Bar */}
       <div className="bg-[#093824] text-white border-b border-[#0f4d33]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 h-16 sm:h-20 flex flex-nowrap items-center justify-between gap-2 sm:gap-4">
           
           {/* Left: Mobile Menu Trigger & Brand Logo */}
           <div className="flex items-center gap-3">
