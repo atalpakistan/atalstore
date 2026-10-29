@@ -1,0 +1,1240 @@
+PROJECT: ATAL STORE — PROFESSIONAL FULL-STACK E-COMMERCE PLATFORM
+
+Act as a senior full-stack software architect, expert React and TypeScript developer, mobile application engineer, UI/UX designer, database architect, payment integration specialist, and performance optimization engineer.
+
+Build a complete, production-oriented, full-stack e-commerce platform named ATAL STORE, designed primarily for customers in Pakistan.
+
+The application must support:
+
+Android mobile applications.
+Apple iOS applications.
+A responsive website.
+A secure administration dashboard.
+Permanent database storage.
+Fast product browsing and checkout.
+Integration-ready Pakistani payment gateways, including JazzCash and Easypaisa.
+
+Use my uploaded ATAL STORE mobile homepage screenshot as the primary visual reference. Reproduce its overall design direction, including the dark green header, premium gold accents, rounded promotional carousel, horizontal category icons, product cards, white background, clean typography, and bottom mobile navigation.
+
+Do not simply create a static UI or frontend demo. Build a functional application with real database operations, authentication, product management, order management, and payment integration.
+
+IMPORTANT: Inspect the existing project before making changes. If this is an existing Google AI Studio project, preserve working features and integrate the new functionality into the current architecture. Do not unnecessarily recreate the project or delete existing data.
+
+1. TECHNOLOGY STACK
+
+Use a modern, stable, maintainable architecture.
+
+Frontend:
+
+React.
+TypeScript.
+Vite for the web application.
+Tailwind CSS or an equivalent lightweight styling system.
+Reusable components.
+Lazy loading and code splitting.
+Responsive mobile-first design.
+
+Mobile applications:
+
+Use React Native with Expo for native Android and iOS applications if the project architecture supports a separate mobile application.
+Reuse shared business logic, API clients, validation schemas, and types wherever practical.
+If the existing project is React web, do not incorrectly claim that the web application alone is a native Android or iOS application.
+Keep the web application, mobile applications, backend, and database compatible through a documented API.
+
+Backend:
+
+Use a secure backend API.
+Prefer Supabase for PostgreSQL database storage, authentication, and file storage when appropriate.
+Alternatively, retain an existing working backend if it already supports the required functionality securely.
+Never store permanent business data only in React state, localStorage, sessionStorage, or static JSON files.
+
+Deployment:
+
+Keep the web frontend compatible with Cloudflare Pages.
+Use Cloudflare Workers or another appropriate secure backend environment where necessary.
+If using Supabase, connect through its supported client and secure server-side functions.
+Keep secrets in environment variables and server-side secret storage.
+2. DESIGN AND BRAND IDENTITY
+
+Brand name: ATAL STORE.
+
+Brand tagline: Pakistan's Unified Marketplace.
+
+Visual design:
+
+Dark green header.
+Elegant gold and white branding.
+White or very light background.
+Premium dark-green promotional banners.
+Rounded cards and buttons.
+Clean product photography.
+Soft shadows and subtle borders.
+Modern typography.
+Professional spacing and alignment.
+Smooth but lightweight transitions.
+Touch-friendly mobile controls.
+
+Use the uploaded screenshot as the design reference, but improve its responsiveness, accessibility, loading performance, and navigation.
+
+The interface must look professional on:
+
+Android phones.
+iPhones.
+Small screens.
+Tablets.
+Laptops.
+Desktop computers.
+
+Prevent horizontal overflow, overlapping text, broken product cards, and cut-off buttons.
+
+3. PROFESSIONAL HOMEPAGE — EXACT SECTION ORDER
+
+Build the homepage in the following order.
+
+SECTION 1: PROMOTIONAL CAROUSEL
+
+Display a premium, full-width image carousel near the top of the homepage.
+
+Requirements:
+
+Support multiple promotional banners.
+Display one main banner at a time.
+Support swipe gestures on mobile.
+Support touch and mouse navigation.
+Use lightweight transitions.
+Automatically advance slides at a configurable interval.
+Allow manual navigation.
+Support banner images, headings, subtitles, and CTA buttons.
+Each banner can link to a category, product, collection, or custom internal page.
+Images must be responsive and correctly cropped.
+Use optimized images and appropriate aspect ratios.
+
+Admin controls:
+
+Add, edit, delete, reorder, and upload banners.
+Set banner titles and descriptions.
+Configure CTA text and destination.
+Set carousel visibility.
+Schedule banner start and end dates.
+Preview banners before publishing.
+SECTION 2: SHOP BY CATEGORY
+
+Display the following five main categories in ONE horizontal row on mobile:
+
+Men.
+Women.
+Kids.
+Cosmetics & Perfume.
+Electronics.
+
+Requirements:
+
+Display a circular icon or category image.
+Display the category name below the icon.
+Use horizontal scrolling on smaller screens.
+Keep icons and labels consistently aligned.
+Make each category clickable.
+Load the relevant category page when selected.
+
+Do not wrap these five categories into multiple rows on mobile.
+
+ADMIN CATEGORY MANAGEMENT:
+
+Administrators must be able to:
+
+Create categories.
+Edit categories.
+Delete categories when safe to do so.
+Upload category images and icons.
+Set category names and descriptions.
+Assign category slugs.
+Set category display order.
+Create nested subcategories.
+Assign products to categories and subcategories.
+Import and export category data.
+Prevent accidental deletion of categories containing products unless the administrator confirms the appropriate reassignment or deletion procedure.
+
+Suggested subcategories:
+
+MEN:
+
+Clothing.
+Shoes.
+Watches.
+Accessories.
+Grooming.
+Bags.
+
+WOMEN:
+
+Clothing.
+Shoes.
+Handbags.
+Jewelry.
+Accessories.
+Beauty Accessories.
+
+KIDS:
+
+Boys' Clothing.
+Girls' Clothing.
+Baby Clothing.
+Shoes.
+Toys.
+Accessories.
+
+COSMETICS & PERFUME:
+
+Skincare.
+Face Wash.
+Makeup.
+Perfumes.
+Fragrances.
+Hair Care.
+Beauty Kits.
+Personal Care.
+
+ELECTRONICS:
+
+Mobile Accessories.
+Earbuds.
+Headphones.
+Speakers.
+Chargers and Cables.
+Smartwatches.
+Computer Accessories.
+Electronic Gadgets.
+
+These subcategories must be editable through the admin panel. Do not hard-code the category list in a way that prevents administrators from changing it.
+
+SECTION 3: FEATURED FESTIVE DEALS
+
+Display the heading:
+
+"⚡ Featured Festive Deals"
+
+Show products in a horizontal, swipeable row.
+
+On mobile, each product must appear in its own product card, with neighboring cards visible or partially visible to encourage horizontal browsing.
+
+Each product card should contain:
+
+Product image.
+Discount badge.
+Product name.
+Sale price in PKR.
+Original price.
+Discount percentage when applicable.
+Product rating when genuine rating data exists.
+Wishlist button.
+Optional stock availability.
+Quick-view or product-details action.
+
+Admin controls:
+
+Enable or disable the entire section.
+Add or remove products from the section.
+Change product ordering.
+Set the section title.
+Configure the number of products.
+Schedule promotional periods.
+Configure promotional badges.
+
+Do not invent discounts or ratings. Calculate discounts from valid product prices and display ratings only when supported by actual review data.
+
+SECTION 4: SPOTLIGHT PRODUCTS
+
+Display a premium section titled:
+
+"Spotlight Products"
+
+Use an elegant layout featuring selected products.
+
+Requirements:
+
+Support one or more featured products.
+Allow different layouts for mobile and desktop.
+Support product images, titles, prices, and CTA buttons.
+Make every product clickable.
+Use the same product detail URL as the rest of the application.
+
+Admin controls:
+
+Enable or disable the section.
+Add or remove spotlight products.
+Change product order.
+Select a display layout.
+Upload or change promotional imagery where applicable.
+Configure section title and CTA text.
+
+Changes must be saved permanently in the database.
+
+SECTION 5: ALL PRODUCT CATALOG
+
+Display:
+
+"Shop All Products"
+
+Show the complete eligible product catalog in a clean, responsive product grid.
+
+Features:
+
+Search products.
+Filter by category and subcategory.
+Filter by price range.
+Filter by brand where applicable.
+Sort by newest, price low-to-high, price high-to-low, and popularity where reliable data exists.
+Show product availability.
+Support pagination or efficient infinite scrolling.
+Preserve selected filters in URL query parameters where appropriate.
+Provide a clear-filter button.
+
+On mobile, use a two-column product grid where sufficient space exists.
+
+Every product card must open its correct individual product detail page.
+
+Do not load the entire product database into the browser at once. Use server-side pagination and efficient database queries.
+
+SECTION 6: NEW LAUNCH
+
+Display:
+
+"New Launch"
+
+Show newly introduced products in a horizontal, swipeable product row.
+
+Each product card must contain:
+
+Product image.
+Product name.
+Current price.
+Original price when available.
+Relevant promotional badge.
+Wishlist control.
+Product details link.
+
+Admin controls:
+
+Enable or disable the section.
+Select products manually.
+Optionally identify new products using their creation date.
+Change section title.
+Change product order.
+Configure the maximum number of products.
+Schedule section visibility.
+
+Support both manual product selection and an optional automatic new-product rule.
+
+SECTION 7: LAUNCH SOON
+
+Display:
+
+"Launch Soon"
+
+Show products that are planned for future release.
+
+Each product card must contain:
+
+Product image.
+Product name.
+Short description.
+Expected launch date when available.
+Optional countdown.
+A "Coming Soon" badge.
+Optional notification or reminder signup.
+
+Admin controls:
+
+Enable or disable the section.
+Add and remove upcoming products.
+Set launch dates.
+Change product images and descriptions.
+Reorder products.
+Configure section title and visibility.
+Publish or remove an upcoming product from this section.
+
+IMPORTANT PRODUCT ACTIVATION RULE:
+
+Do not create a product-level Activate/Deactivate toggle, active-status switch, or similar product activation control in the product form or product list.
+
+Administrators must still be able to:
+
+Create products.
+Edit products.
+Delete products.
+Update product information.
+Manage inventory.
+Assign products to homepage sections.
+Schedule promotional sections.
+Manage upcoming product listings.
+
+Control homepage section visibility through section settings.
+
+Use clear publication and scheduling rules for storefront visibility without adding the prohibited product-level activation toggle.
+
+For Launch Soon, use a separate upcoming-product record or release-schedule mechanism if necessary. Do not expose the normal product activation switch.
+
+4. GLOBAL HEADER AND FOOTER
+HEADER
+
+Create a professional, responsive header inspired by the uploaded screenshot.
+
+Include:
+
+ATAL STORE logo.
+Search icon or search bar.
+Wishlist icon with item count.
+Shopping bag/cart icon with item count.
+Customer account icon.
+Optional promotional announcement bar.
+
+The logo must be uploaded and managed through the admin panel.
+
+Support:
+
+Header logo image upload.
+Separate desktop and mobile logo images if needed.
+Logo size and display settings.
+Accessible alternative text.
+Correct logo aspect ratio.
+
+Clicking the logo must return the customer to the homepage.
+
+FOOTER
+
+Build a complete, professional footer.
+
+Include:
+
+ATAL STORE logo.
+Brand description.
+Shop category links.
+Customer support information.
+Contact information.
+Shipping policy.
+Return and refund policy.
+Privacy policy.
+Terms and conditions.
+FAQ.
+Order tracking.
+Social media links.
+Copyright information.
+
+Admin controls:
+
+Upload or replace footer logo.
+Edit footer description.
+Manage footer navigation links.
+Update customer support details.
+Manage social media links.
+Edit policy page content.
+Change footer layout settings.
+
+Header and footer logo uploads must be saved to persistent file storage. Save their file references in the database, not just temporary browser state.
+
+5. PROFESSIONAL NAVIGATION SYSTEM
+
+Implement complete navigation for the website and mobile applications.
+
+Mobile bottom navigation:
+
+Home.
+Categories.
+Cart.
+My Orders.
+Account.
+
+The Admin Dashboard must be available only to authorized administrators. It must not be accessible to ordinary customers simply by displaying a button.
+
+Provide an appropriate admin entry point, either through a protected route or a separate admin URL.
+
+Navigation requirements:
+
+Working back navigation.
+Correct browser history behavior.
+Android system back-button support.
+iOS navigation behavior.
+Breadcrumbs on category and product pages where appropriate.
+Persistent cart state for signed-in customers.
+Deep links to product detail pages.
+Direct URL access to product pages.
+Proper handling of invalid routes.
+A useful 404 page.
+Search navigation.
+Category and subcategory navigation.
+Login and registration navigation.
+Checkout navigation.
+Order confirmation navigation.
+
+Prevent navigation loops and blank pages.
+
+Do not send customers back to the homepage when they expect to return to the previous valid page.
+
+6. UNIQUE PRODUCT URL SYSTEM
+
+Every product must have its own permanent, human-readable URL.
+
+Example:
+
+https://atalstore.com/product/atal-signature
+
+Other examples:
+
+https://atalstore.com/product/google-pixel-earbuds-pro
+
+https://atalstore.com/product/luxury-perfume-100ml
+
+Requirements:
+
+Generate a unique product slug when a product is created.
+Allow administrators to edit the slug.
+Validate slug uniqueness in the database.
+Handle duplicate product names automatically.
+Use a stable product ID as the database identity.
+Resolve the URL slug to the correct product record.
+Load the correct product after a page refresh.
+Support opening a product URL directly in a new browser tab.
+Support sharing product links through WhatsApp and other applications.
+Generate canonical URLs.
+Set product-specific page titles, descriptions, and social-sharing metadata.
+Handle deleted or renamed product URLs gracefully.
+Provide a redirect mechanism when a product slug changes.
+Prevent one product's URL from displaying another product's information.
+
+IMPORTANT:
+
+Do not implement product pages using only temporary React state.
+
+The product detail page must fetch the correct product from the persistent backend using its unique slug or stable ID.
+
+Configure Cloudflare or the selected hosting platform to support direct navigation and refreshes on product routes.
+
+Test every URL behavior on desktop, mobile browsers, Android, and iOS.
+
+7. PRODUCT MANAGEMENT SYSTEM
+
+Build a complete product management module in the admin dashboard.
+
+Product fields:
+
+Product ID.
+Product name.
+Unique slug.
+SKU.
+Brand.
+Main category.
+Subcategory.
+Product description.
+Short description.
+Product images.
+Optional image gallery.
+Purchase price.
+Original price.
+Sale price.
+Discount price when applicable.
+Currency.
+Available stock.
+Low-stock threshold.
+Product variations.
+Size options.
+Color options.
+Variant-specific SKU.
+Variant-specific price.
+Variant-specific stock.
+Variant-specific images.
+Weight and dimensions when applicable.
+Shipping requirements.
+SEO title.
+SEO description.
+Product creation date.
+Last updated date.
+New Launch assignment.
+Spotlight assignment.
+Featured Festive Deals assignment.
+Launch Soon information when applicable.
+
+Product actions:
+
+Add product.
+Edit product.
+Delete product.
+Duplicate product.
+Search products.
+Filter products.
+Bulk import.
+Bulk export.
+Update prices.
+Update inventory.
+Upload multiple product images.
+Assign products to homepage sections.
+
+When a customer selects a different product color, display the corresponding product image when one exists.
+
+When a customer selects a size or other variation, update the displayed price and availability as required.
+
+Validate all prices, inventory values, SKUs, image uploads, and product slugs.
+
+Do not permit invalid stock values or negative prices.
+
+8. COMPLETE PRODUCT DETAIL PAGE
+
+Create a professional product detail page containing:
+
+Product image gallery.
+Product name.
+Brand.
+SKU where appropriate.
+Sale price.
+Original price.
+Calculated discount.
+Available colors.
+Available sizes.
+Product description.
+Specifications.
+Stock information.
+Quantity selector.
+Add to Cart button.
+Buy Now button.
+Wishlist button.
+Shipping information.
+Return policy.
+Customer reviews where supported.
+Related products.
+Recently viewed products where practical.
+Share product link.
+
+All buttons must work.
+
+The Add to Cart button must add the correct product variant and quantity.
+
+The Buy Now button must take the customer to checkout with the correct product and selected variation.
+
+Validate stock again on the server before confirming an order.
+
+9. PAKISTAN-SPECIFIC CHECKOUT
+
+Build a smooth, mobile-friendly checkout designed for customers in Pakistan.
+
+Currency:
+
+Pakistani Rupee (PKR).
+Use proper price formatting, such as Rs. 2,499.
+
+Customer information:
+
+Full name.
+Pakistani mobile number.
+Email address when required or provided.
+Province or territory.
+City.
+Area or locality.
+Complete street address.
+Landmark or delivery instructions.
+Optional order notes.
+
+Support appropriate address options for Pakistan, including provinces, Islamabad Capital Territory, and relevant territories.
+
+Validate Pakistani mobile numbers while accommodating valid local formats and international +92 format.
+
+Checkout options:
+
+Cash on Delivery (COD).
+JazzCash.
+Easypaisa.
+
+Order summary:
+
+Product subtotal.
+Item discounts.
+Coupon discount.
+Shipping fee.
+Applicable taxes if configured.
+Final payable amount.
+
+Additional features:
+
+Coupon codes.
+Free-shipping rules.
+Delivery fee configuration.
+Order confirmation page.
+Order number generation.
+Order history.
+Order tracking.
+Cancellation requests according to business rules.
+
+Allow the administrator to configure:
+
+COD availability.
+COD restrictions if needed.
+Shipping charges.
+Free-shipping threshold.
+Delivery zones.
+Payment options.
+Coupon rules.
+Minimum order amount.
+
+Never expose payment credentials or secret keys in frontend code.
+
+10. JAZZCASH AND EASYPAISA INTEGRATION
+
+Implement a secure payment integration architecture for:
+
+JazzCash.
+Easypaisa.
+
+Requirements:
+
+Use the official merchant integration documentation and approved merchant credentials.
+Keep credentials on the server.
+Generate payment requests on the backend.
+Verify payment signatures or hashes according to each provider's official protocol.
+Validate callback authenticity.
+Verify payment status on the server.
+Use idempotent payment processing to prevent duplicate transactions.
+Store transaction references.
+Record payment attempts and results.
+Handle pending, successful, failed, cancelled, and expired payments.
+Prevent an unverified payment callback from marking an order as paid.
+Never trust a payment-success message coming only from the browser.
+Do not collect or store customers' payment PINs, passwords, or OTPs.
+
+Provide clear configuration instructions for the merchant account, API credentials, callback URLs, and environment variables.
+
+If merchant credentials or gateway access are unavailable, create a clearly documented integration adapter and test mode.
+
+Do not claim that real payments are operational until the integration has been configured and successfully tested using the provider's approved testing or live process.
+
+COD must remain usable independently of the online payment gateways.
+
+11. CUSTOMER AUTHENTICATION AND ACCOUNTS
+
+Implement:
+
+Customer registration.
+Login.
+Logout.
+Password reset.
+Email verification where supported.
+Secure session management.
+Customer profile.
+Saved addresses.
+Wishlist.
+Cart.
+Order history.
+Order detail page.
+
+Use secure authentication and proper authorization.
+
+Show clear error messages for:
+
+Invalid credentials.
+Network failures.
+Duplicate email or account.
+Invalid mobile number.
+Expired session.
+Failed password reset.
+
+Do not expose technical stack traces or sensitive database details to customers.
+
+12. ADMIN DASHBOARD
+
+Build a separate, secure, responsive admin dashboard.
+
+Dashboard modules:
+
+Overview.
+Products.
+Categories.
+Subcategories.
+Product variations.
+Inventory.
+Orders.
+Customers.
+Payments.
+Coupons.
+Promotional banners.
+Featured Festive Deals.
+Spotlight Products.
+All Product Catalog settings.
+New Launch.
+Launch Soon.
+Header settings.
+Footer settings.
+Shipping settings.
+Payment gateway settings.
+SEO settings.
+Import and export.
+Reports.
+Audit logs.
+General settings.
+
+Admin dashboard overview should display:
+
+Total orders.
+Today's orders.
+Pending orders.
+Processing orders.
+Shipped orders.
+Delivered orders.
+Cancelled orders.
+Total sales.
+Sales for a selected period.
+Low-stock products.
+Recent orders.
+
+Restrict the dashboard and every administrative API endpoint to authorized administrators.
+
+Never rely on hiding the Admin button as a security mechanism.
+
+13. ORDER MANAGEMENT
+
+Create a complete order management workflow.
+
+Order statuses:
+
+Pending.
+Confirmed.
+Processing.
+Ready to Ship.
+Shipped.
+Delivered.
+Cancelled.
+Returned.
+Refunded, where applicable.
+
+Payment statuses:
+
+Pending.
+Paid.
+Failed.
+Cancelled.
+Refunded.
+
+Keep order status separate from payment status.
+
+Administrators must be able to:
+
+View orders.
+Search by order number.
+Filter orders.
+View customer details.
+View ordered products and variations.
+Update order status.
+Add tracking information.
+Review payment status.
+Print invoices.
+Export order data.
+
+Save every status update to the database.
+
+Maintain an order history or audit log.
+
+Use transactions or equivalent safeguards to prevent overselling inventory and duplicate order processing.
+
+14. PERMANENT DATABASE STORAGE
+
+This is a critical requirement.
+
+All business data must persist after:
+
+Page refresh.
+Browser restart.
+Customer logout.
+Administrator logout.
+New deployment.
+GitHub push.
+Cloudflare rebuild.
+Google AI Studio code updates.
+Frontend redeployment.
+
+Store business data in a persistent database.
+
+Required persistent entities include:
+
+Products.
+Categories.
+Subcategories.
+Product variants.
+Inventory.
+Product images.
+Carousel banners.
+Homepage section settings.
+Section-product assignments.
+Header settings.
+Footer settings.
+Customers.
+Addresses.
+Carts where appropriate.
+Orders.
+Order items.
+Payments.
+Coupons.
+Reviews where supported.
+Shipping rules.
+Application settings.
+Audit logs.
+
+Use database migrations and version-controlled schema definitions.
+
+Never delete production data or reset the database automatically during deployment.
+
+Do not use in-memory data as the permanent source of truth.
+
+Do not overwrite administrator-managed content with hard-coded defaults on application startup.
+
+Seed initial data only through a safe, explicit, repeatable process.
+
+If a database connection fails, show an appropriate error instead of silently replacing real data with demo data.
+
+15. IMAGE STORAGE AND UPLOADS
+
+Use persistent object storage for:
+
+Product images.
+Category images.
+Carousel banners.
+Header logos.
+Footer logos.
+Spotlight promotional images.
+
+Requirements:
+
+Validate file types.
+Limit upload sizes.
+Optimize images.
+Generate thumbnails where useful.
+Support modern formats such as WebP when appropriate.
+Preserve image aspect ratios.
+Provide image previews.
+Handle failed uploads gracefully.
+Delete obsolete files safely when appropriate.
+
+Store image URLs or storage paths in the database.
+
+Do not store uploaded images only as temporary browser blobs or temporary local files.
+
+Do not lose images when the frontend is redeployed.
+
+16. EXPORT AND IMPORT
+
+Provide reliable administrative export and import for:
+
+Products.
+Categories.
+Subcategories.
+Variations.
+Inventory.
+Homepage settings.
+Banners.
+Relevant configuration.
+
+Use documented, versioned JSON backups with a consistent schema.
+
+Requirements:
+
+Export valid JSON.
+Include a schema version.
+Validate imports before changing data.
+Provide useful validation error messages.
+Detect missing required fields.
+Detect duplicate SKUs and conflicting slugs.
+Validate relationships between categories and products.
+Preview import results.
+Show the number of records to create, update, skip, or reject.
+Support rollback or transactional imports where feasible.
+Prevent malformed files from corrupting existing data.
+Do not silently discard unknown fields or records.
+Provide an explicit confirmation before destructive updates.
+
+Use database transactions or equivalent safeguards so a failed import cannot leave the catalog partially corrupted.
+
+17. VERY FAST LOADING AND PERFORMANCE
+
+Performance is a core requirement.
+
+Optimize for users in Pakistan, including slower mobile connections and budget Android phones.
+
+Implement:
+
+Code splitting.
+Lazy-loaded routes.
+Lazy-loaded product images.
+Responsive image sizes.
+WebP or AVIF where supported.
+Image compression.
+CDN delivery.
+Browser caching.
+Efficient database indexes.
+Server-side pagination.
+Efficient API queries.
+Request deduplication.
+Debounced search.
+Lightweight components.
+Minimal unnecessary dependencies.
+Reduced layout shifts.
+Skeleton loading states.
+Cached category data where appropriate.
+Optimized fonts.
+Minimal blocking JavaScript.
+Production builds without development-only code.
+
+Avoid:
+
+Loading all products on initial page load.
+Re-downloading the same images repeatedly.
+Excessive animations.
+Large unnecessary libraries.
+Blocking the homepage on nonessential API requests.
+Repeated database calls for the same data.
+Rendering large product lists without pagination.
+
+Load the header, carousel, categories, and initial product content first.
+
+Load lower homepage sections progressively when practical.
+
+Use a CDN and appropriate cache policies for static assets.
+
+Never cache sensitive customer information or personalized checkout responses publicly.
+
+Use stale-while-revalidate or similar strategies where appropriate for public catalog data, while ensuring product prices and stock are validated before checkout.
+
+Target Core Web Vitals:
+
+LCP: 2.5 seconds or less.
+INP: 200 milliseconds or less.
+CLS: 0.1 or less.
+
+These are performance targets, not guaranteed results. Measure performance on real devices and representative network conditions.
+
+18. SECURITY AND RELIABILITY
+
+Implement:
+
+Server-side input validation.
+Database access policies.
+Role-based access control.
+Secure administrator authentication.
+Protected API routes.
+Rate limiting where appropriate.
+Secure secret management.
+Payment callback verification.
+Safe error handling.
+Protection against unauthorized data access.
+Audit logs for sensitive admin actions.
+Appropriate backup procedures.
+Database migrations.
+Transactional order creation.
+
+Never expose service-role keys, payment secrets, or database passwords in client-side JavaScript.
+
+Never permit ordinary customers to modify product prices, order totals, inventory, or administrator permissions.
+
+Calculate final prices and order totals on the server.
+
+Validate stock and discounts on the server at checkout.
+
+19. SEO AND PRODUCT DISCOVERY
+
+Implement:
+
+Unique product URLs.
+Product-specific page titles.
+Meta descriptions.
+Canonical links.
+Open Graph metadata.
+Product structured data where appropriate.
+XML sitemap.
+Robots.txt.
+Search-friendly category pages.
+Proper HTTP status codes where supported.
+
+Make sure the application can open individual product URLs directly.
+
+Provide appropriate routing and hosting configuration for the selected deployment platform.
+
+20. ADMIN-CONTROLLED HOMEPAGE SETTINGS
+
+Provide a dedicated homepage management screen.
+
+Administrators must be able to:
+
+Change section titles.
+Change section order where supported.
+Enable or disable each homepage section.
+Select products for each section.
+Reorder products.
+Configure product limits.
+Manage carousel banners.
+Update header and footer logos.
+Preview changes before saving.
+
+All settings must be stored in the database.
+
+Do not create a product-level Activate/Deactivate toggle.
+
+Section visibility must be controlled by section-specific settings.
+
+Use an explicit Save or Publish action where appropriate, with:
+
+Loading feedback.
+Success confirmation.
+Error feedback.
+Prevention of duplicate submissions.
+Server-side persistence.
+Proper refresh of updated settings.
+
+When an administrator saves a change, the updated content should appear on the storefront without requiring a code edit or a new GitHub deployment.
+
+Use cache invalidation or revalidation so public pages display updated content promptly.
+
+21. MOBILE APPLICATION REQUIREMENTS
+
+The Android and iOS experiences must feel like real shopping applications.
+
+Requirements:
+
+Native-friendly navigation.
+Touch-friendly buttons.
+Smooth scrolling.
+Responsive product images.
+Native back-button behavior.
+Persistent cart.
+Secure authentication.
+Deep links to individual products.
+Shareable product links.
+Reliable checkout.
+Order tracking.
+Push notifications only when properly configured and permission is granted.
+
+Use native platform conventions where appropriate.
+
+Document the process for generating Android builds and iOS builds.
+
+Do not claim that an APK, Android App Bundle, or iOS application has been produced unless the corresponding build has actually been completed.
+
+Do not claim that an app has been published to Google Play or Apple's App Store unless it has actually been published.
+
+22. TESTING AND ACCEPTANCE CRITERIA
+
+Do not consider the project complete merely because the homepage looks correct.
+
+Implement and test the following:
+
+TEST 1:
+Create a product in the admin dashboard and verify that it remains after refreshing the page.
+
+TEST 2:
+Update the product price and verify that the new price appears on its detail page and product listings.
+
+TEST 3:
+Create a category and subcategory, assign products, and verify category navigation.
+
+TEST 4:
+Upload a carousel banner and verify that it remains after a new frontend deployment.
+
+TEST 5:
+Disable Spotlight in homepage settings and verify that the section disappears from the storefront.
+
+TEST 6:
+Change the New Launch product order and verify that the saved order persists.
+
+TEST 7:
+Add a product to the Launch Soon section and verify that its planned release details display correctly.
+
+TEST 8:
+Open a unique product URL directly in a new tab and refresh the page. Verify that the correct product loads.
+
+TEST 9:
+Rename a product slug and verify that the old URL redirects appropriately when a redirect has been configured.
+
+TEST 10:
+Add a product variation, select another color, and verify that its corresponding image appears.
+
+TEST 11:
+Add products to the cart and verify that the correct quantities and totals are calculated.
+
+TEST 12:
+Complete a COD checkout and verify that the order is saved in the database and visible in the admin dashboard.
+
+TEST 13:
+Test JazzCash and Easypaisa using the configured merchant test or approved payment process. Verify that unsuccessful payments cannot be marked as paid.
+
+TEST 14:
+Verify that an ordinary customer cannot access administrator functions or modify prices and inventory.
+
+TEST 15:
+Refresh the application, log out, log in again, and verify that the appropriate data remains available.
+
+TEST 16:
+Build and deploy the frontend, then verify that products, categories, banners, settings, and orders remain intact.
+
+TEST 17:
+Test the layout on Android, iPhone-sized viewports, tablets, laptops, and desktop computers.
+
+TEST 18:
+Test loading performance on a slower mobile connection and verify that images and content load progressively.
+
+TEST 19:
+Import a valid backup and confirm that records are restored correctly.
+
+TEST 20:
+Import an invalid backup and confirm that useful errors appear without corrupting existing data.
+
+23. IMPLEMENTATION INSTRUCTIONS
+
+Work in this order:
+
+PHASE 1:
+Inspect the existing project, identify the framework, review dependencies, inspect current routes, and identify existing database and authentication integrations.
+
+PHASE 2:
+Design the backend architecture, database schema, authentication, storage, security policies, and migrations.
+
+PHASE 3:
+Implement the shared design system, header, carousel, category row, product cards, and homepage sections in the exact requested order.
+
+PHASE 4:
+Implement category pages, product listing, product detail pages, unique product URLs, search, variations, and wishlist.
+
+PHASE 5:
+Implement customer accounts, persistent cart, checkout, COD orders, and order tracking.
+
+PHASE 6:
+Implement the admin dashboard, product management, inventory, categories, banners, homepage controls, header/footer settings, and order management.
+
+PHASE 7:
+Implement JazzCash and Easypaisa integration adapters, secure callbacks, and payment verification.
+
+PHASE 8:
+Optimize performance, configure hosting and routing, and implement export/import and backups.
+
+PHASE 9:
+Test all critical flows, resolve build errors, verify mobile responsiveness, and document deployment.
+
+24. FINAL DELIVERY REQUIREMENTS
+
+When the implementation is complete, provide:
+
+A summary of the implemented features.
+The final technology stack.
+Database schema and migration details.
+Required environment variables.
+Backend and database setup instructions.
+Admin account setup instructions that do not expose credentials.
+JazzCash merchant configuration instructions.
+Easypaisa merchant configuration instructions.
+Cloudflare and GitHub deployment instructions.
+Android build instructions.
+iOS build instructions.
+A list of completed tests.
+A list of remaining limitations or integrations requiring external credentials.
+
+Do not fabricate successful tests, deployed features, configured payment gateways, or completed mobile builds.
+
+If a required external service is not configured, explain exactly what remains to be done.
+
+FINAL OBJECTIVE:
+
+Deliver a professional, fast, secure, mobile-first ATAL STORE e-commerce platform with the same premium visual direction as my uploaded screenshot, all seven homepage sections in the exact specified order, a complete admin dashboard, permanent database storage, individual product URLs, Pakistan-specific checkout, JazzCash and Easypaisa integration, and genuine Android, iOS, and web support.
+
+Prioritize working functionality, permanent data persistence, security, mobile usability, and real performance over unnecessary animations or decorative complexity.

@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#062819" />
+      <stop offset="50%" stop-color="#093824" />
+      <stop offset="100%" stop-color="#041a10" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fef08a" />
+      <stop offset="40%" stop-color="#eab308" />
+      <stop offset="80%" stop-color="#ca8a04" />
+      <stop offset="100%" stop-color="#854d0e" />
+    </linearGradient>
+    <filter id="goldGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#ca8a04" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="104" fill="url(#bgGrad)" />
+  <!-- Inner Border Ring -->
+  <rect x="24" y="24" width="464" height="464" rx="88" fill="none" stroke="url(#goldGrad)" stroke-width="4" stroke-opacity="0.8" />
+  
+  <!-- Crown / Starburst Emblem -->
+  <g transform="translate(256, 150)" filter="url(#goldGlow)">
+    <polygon points="0,-36 8,-12 34,-12 12,4 20,28 0,14 -20,28 -12,4 -34,-12 -8,-12" fill="url(#goldGrad)" />
+  </g>
+
+  <!-- Stylized Luxury 'A' -->
+  <path d="M 256 180 L 330 350 L 290 350 L 274 310 L 238 310 L 222 350 L 182 350 Z M 256 244 L 245 284 L 267 284 Z" fill="url(#goldGrad)" filter="url(#goldGlow)" />
+  
+  <!-- ATAL Wordmark -->
+  <text x="256" y="405" text-anchor="middle" font-family="'Playfair Display', Georgia, serif" font-size="44" font-weight="700" letter-spacing="8" fill="url(#goldGrad)">ATAL</text>
+  <text x="256" y="438" text-anchor="middle" font-family="'Plus Jakarta Sans', sans-serif" font-size="16" font-weight="600" letter-spacing="6" fill="#fef08a">STORE</text>
+  
+  <!-- Accent Line -->
+  <line x1="170" y1="455" x2="342" y2="455" stroke="url(#goldGrad)" stroke-width="2" stroke-opacity="0.7"/>
+</svg>

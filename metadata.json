@@ -1,0 +1,6 @@
+{
+  "name": "ATAL STORE — Pakistan's Unified Marketplace",
+  "description": "ATAL – Shop Smart. Live Better. 🛍️ Your trusted online store for beauty, cosmetics, perfumes, fashion & electronics—quality products, stylish choices, and easy shopping, all in one place. ✨",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
