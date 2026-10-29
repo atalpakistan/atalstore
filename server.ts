@@ -14,14 +14,25 @@ async function startServer() {
   app.use(express.json({ limit: '20mb' }));
   app.use(express.urlencoded({ extended: true, limit: '20mb' }));
 
+  // CORS & Preflight middleware for API
+  app.use('/api', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(204);
+    }
+    next();
+  });
+
   // Serve static uploads
   app.use('/uploads', express.static(path.resolve(__dirname, 'public', 'uploads')));
 
   // Mount API router
   app.use('/api', apiRouter);
 
-  // Unmatched /api routes fallback to JSON 404
-  app.use('/api/*', (req, res) => {
+  // Unmatched /api routes fallback to JSON 404 (prevents falling through to Vite 405)
+  app.all('/api*', (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.method} ${req.originalUrl || req.url}` });
   });
 

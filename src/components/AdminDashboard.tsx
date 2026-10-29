@@ -487,8 +487,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   // Backup Export & Import
-  const handleExportBackup = () => {
-    window.location.href = '/api/admin/backup/export';
+  const handleExportBackup = async () => {
+    try {
+      const res = await fetch('/api/admin/backup/export', { headers: authHeaders });
+      if (!res.ok) {
+        const text = await res.text();
+        showFeedback(`Export failed: ${text}`, 'error');
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `atal-store-backup-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showFeedback('Backup exported successfully');
+    } catch (err: any) {
+      showFeedback(`Export failed: ${err.message}`, 'error');
+    }
   };
 
   const handleImportBackup = async (dryRun = false) => {
