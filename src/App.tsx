@@ -23,6 +23,7 @@ import { SearchModal } from './components/SearchModal';
 import { OrderTrackingModal } from './components/OrderTrackingModal';
 import { AuthModal } from './components/AuthModal';
 import { AdminDashboard } from './components/AdminDashboard';
+import { CustomerDashboard } from './components/CustomerDashboard';
 import { PWAInstallButton } from './components/PWAInstallButton';
 
 import { Product, ProductVariant, HomepagePayload, StoreSettings } from './types';
@@ -116,6 +117,7 @@ function StorefrontApp() {
   const isOrderSuccessRoute = currentPath.startsWith('/order-success/');
   const orderSuccessId = isOrderSuccessRoute ? currentPath.replace('/order-success/', '').split('?')[0] : null;
 
+  const isDashboardRoute = currentPath === '/dashboard' || currentPath === '/orders' || currentPath === '/account';
   const isAdminRoute = currentPath === '/admin';
 
   // Handle Buy Now
@@ -202,11 +204,8 @@ function StorefrontApp() {
           }, 100);
         }}
         onNavigateAdmin={() => navigateTo('/admin')}
-        onNavigateOrders={() => {
-          if (!user) openAuthModal('login');
-          else setIsTrackingOpen(true);
-        }}
-        onOpenTracking={() => setIsTrackingOpen(true)}
+        onNavigateOrders={() => navigateTo('/dashboard')}
+        onOpenTracking={() => navigateTo('/dashboard')}
       />
 
       {/* Main Content Area */}
@@ -228,7 +227,13 @@ function StorefrontApp() {
           <OrderSuccessPage
             orderId={orderSuccessId}
             onNavigateHome={() => navigateTo('/')}
-            onNavigateTrack={() => setIsTrackingOpen(true)}
+            onNavigateTrack={() => navigateTo(`/dashboard?order=${orderSuccessId}`)}
+          />
+        ) : isDashboardRoute ? (
+          <CustomerDashboard
+            initialOrderId={new URLSearchParams(window.location.search).get('order') || ''}
+            onBackToStore={() => navigateTo('/')}
+            onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
           />
         ) : (
           /* HOMEPAGE IN EXACT SPECIFIED SECTION ORDER */
@@ -358,10 +363,10 @@ function StorefrontApp() {
                 document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
               }, 100);
             } else if (tab === 'orders') {
-              setIsTrackingOpen(true);
+              navigateTo('/dashboard');
             } else if (tab === 'account') {
               if (!user) openAuthModal('login');
-              else setIsTrackingOpen(true);
+              else navigateTo('/dashboard');
             }
           }}
         />

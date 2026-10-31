@@ -154,7 +154,12 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
         return;
       }
 
-      const orderId = data.order.orderId;
+      const orderId = String(data.orderId || data.order?.orderId || data.order?.id || data.order?.order_id || '');
+      if (!orderId) {
+        setSubmitError('Failed to retrieve order reference number. Please check your SMS or contact support.');
+        setIsSubmitting(false);
+        return;
+      }
 
       // 2. If Cash on Delivery, complete immediately
       if (paymentMethod === 'cod') {

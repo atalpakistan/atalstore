@@ -563,11 +563,11 @@ router.post('/orders', (req, res) => {
       const shipping_fee = subtotal >= freeThreshold ? 0 : standardShippingFee;
       const total_amount = subtotal - discount + shipping_fee;
 
-      // Generate clean, memorable, trackable unique order number (e.g. ATL-582914)
-      let orderId = `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
+      // Generate clean, guaranteed 9-digit numeric trackable order number (e.g. 901827463)
+      let orderId = Math.floor(100000000 + Math.random() * 900000000).toString();
       let attempts = 0;
       while (db.prepare('SELECT id FROM orders WHERE id = ?').get(orderId) && attempts < 10) {
-        orderId = `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
+        orderId = Math.floor(100000000 + Math.random() * 900000000).toString();
         attempts++;
       }
 
@@ -611,6 +611,8 @@ router.post('/orders', (req, res) => {
 
       return {
         orderId,
+        id: orderId,
+        order_id: orderId,
         subtotal,
         discount,
         shipping_fee,
@@ -623,6 +625,7 @@ router.post('/orders', (req, res) => {
     const result = createOrderTx();
     res.json({
       success: true,
+      orderId: result.orderId,
       order: result
     });
   } catch (err: any) {
