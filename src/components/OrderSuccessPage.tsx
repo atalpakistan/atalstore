@@ -33,6 +33,17 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
       const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);
       if (res.ok) {
         const data = await res.json();
+        console.log('🧾 [Order Confirmation Pricing Audit] Retrieved order from API:', {
+          orderId: data.id,
+          subtotal: data.subtotal,
+          total_amount: data.total_amount,
+          items: data.items?.map((i: any) => ({
+            name: i.product_name,
+            price: i.price,
+            quantity: i.quantity,
+            total: i.total
+          }))
+        });
         setOrder(data);
       } else {
         const errData = await res.json().catch(() => ({}));

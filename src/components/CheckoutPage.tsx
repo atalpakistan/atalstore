@@ -121,6 +121,15 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     setIsSubmitting(true);
 
     try {
+      console.log('🛍️ [Checkout Cart Audit] Submitting items to /api/orders:', items.map(it => ({
+        product_id: it.product_id,
+        name: it.product?.name,
+        unit_price: it.unit_price,
+        total_price: it.total_price,
+        quantity: it.quantity,
+        variant_id: it.variant_id
+      })));
+
       // 1. Submit Order to transactional backend
       const res = await fetch('/api/orders', {
         method: 'POST',
@@ -139,11 +148,19 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
           payment_method: paymentMethod,
           transaction_id: transactionId.trim(),
           coupon_code: appliedCoupon?.code || null,
-          items: items.map((it) => ({
-            product_id: it.product_id,
-            variant_id: it.variant_id,
-            quantity: it.quantity,
-          })),
+          items: items.map((it) => {
+            const qty = Number(it.quantity) || 1;
+            const price = Number(it.unit_price || it.total_price / qty || it.product?.sale_price || 0);
+            if (price <= 0) {
+              console.warn(`⚠️ [Checkout Warning] Item ${it.product?.name} has zero or invalid unit price:`, it);
+            }
+            return {
+              product_id: it.product_id,
+              variant_id: it.variant_id,
+              quantity: qty,
+              unit_price: price,
+            };
+          }),
         }),
       });
 

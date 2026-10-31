@@ -503,6 +503,8 @@ router.post('/orders', (req, res) => {
           throw new Error(`Product ${item.product_id} no longer exists in database.`);
         }
 
+        console.log(`🔍 [Database Price Fetch] Product ID: ${prod.id} (${prod.name}) | DB sale_price: ${prod.sale_price} | Variant ID: ${item.variant_id || 'None'}`);
+
         let canonicalUnitPrice = Number(prod.sale_price);
         let variantTitle: string | null = null;
         let itemImg: string = safeJsonParse<string[]>(prod.images, [])[0] || '/icon.svg';
@@ -510,6 +512,7 @@ router.post('/orders', (req, res) => {
         if (item.variant_id) {
           const variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?').get(item.variant_id, item.product_id) as any;
           if (variant) {
+            console.log(`🔍 [Database Variant Price Fetch] Variant ID: ${variant.id} | DB variant price: ${variant.price}`);
             if (variant.price !== undefined && variant.price !== null && Number(variant.price) > 0) {
               canonicalUnitPrice = Number(variant.price);
             }
@@ -523,8 +526,8 @@ router.post('/orders', (req, res) => {
         }
 
         if (isNaN(canonicalUnitPrice) || canonicalUnitPrice <= 0) {
-          // Fallback check to any frontend submitted unit price if database returned zero, but strictly require > 0
           const clientPrice = Number(item.unit_price || item.price || item.sale_price);
+          console.warn(`⚠️ [Price Fallback] Database price was zero/invalid. Fallback client price: ${clientPrice}`);
           if (!isNaN(clientPrice) && clientPrice > 0) {
             canonicalUnitPrice = clientPrice;
           }
