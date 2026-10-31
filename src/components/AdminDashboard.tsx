@@ -658,7 +658,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="flex items-center gap-2">
             <Shield className="w-6 h-6 text-amber-400" />
             <h1 className="font-display text-lg sm:text-xl font-bold tracking-tight">
-              ATAL STORE <span className="text-amber-300 font-normal text-xs uppercase px-2 py-0.5 bg-emerald-950 rounded border border-emerald-800">Admin Control</span>
+              ATAL <span className="text-amber-300 font-normal text-xs uppercase px-2 py-0.5 bg-emerald-950 rounded border border-emerald-800">Admin Control</span>
             </h1>
           </div>
         </div>

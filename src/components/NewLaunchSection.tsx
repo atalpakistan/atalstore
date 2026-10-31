@@ -31,7 +31,7 @@ export const NewLaunchSection: React.FC<NewLaunchSectionProps> = ({
   if (!products || products.length === 0) return null;
 
   return (
-    <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 border-t border-slate-200">
+    <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 bg-emerald-50/80 sm:rounded-3xl border-y sm:border border-emerald-200/70 my-4">
       {/* Header */}
       <div className="flex items-end justify-between mb-5">
         <div>

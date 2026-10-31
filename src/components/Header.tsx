@@ -74,7 +74,7 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <img
                 src={logoUrl}
-                alt="ATAL STORE Logo"
+                alt="ATAL Logo"
                 className="w-9 h-9 sm:w-11 sm:h-11 object-contain drop-shadow rounded-md"
                 onError={(e) => {
                   (e.target as HTMLElement).style.display = 'none';
@@ -82,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
               />
               <div className="flex flex-col">
                 <span className="font-display font-bold text-xl sm:text-2xl tracking-wider text-amber-300 group-hover:text-amber-200 transition-colors">
-                  ATAL<span className="text-white font-light text-base sm:text-lg ml-1">STORE</span>
+                  ATAL
                 </span>
                 <span className="text-[10px] text-emerald-200 tracking-wider uppercase font-medium hidden sm:block">
                   {settings?.tagline || 'Smart Shop. Live Better'}

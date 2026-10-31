@@ -57,10 +57,10 @@ export const Footer: React.FC<FooterProps> = ({
           {/* Col 1: Brand Info & Guarantees */}
           <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
-              <img src={logoUrl} alt="ATAL STORE" className="w-10 h-10 object-contain drop-shadow" />
+              <img src={logoUrl} alt="ATAL" className="w-10 h-10 object-contain drop-shadow" />
               <div>
                 <span className="font-display font-bold text-2xl text-amber-300">
-                  ATAL<span className="text-white font-light text-lg ml-1">STORE</span>
+                  ATAL
                 </span>
                 <p className="text-[10px] text-emerald-300 tracking-wider uppercase font-semibold">
                   {settings?.tagline || 'Smart Shop. Live Better'}
@@ -278,7 +278,7 @@ export const Footer: React.FC<FooterProps> = ({
         {/* Bottom Bar: Copyright & Verified Gateways */}
         <div className="pt-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-emerald-300/70">
           <div>
-            &copy; {new Date().getFullYear()} ATAL STORE. All rights reserved. {settings?.tagline || 'Smart Shop. Live Better'}.
+            &copy; {new Date().getFullYear()} ATAL. All rights reserved. {settings?.tagline || 'Smart Shop. Live Better'}.
           </div>
 
           <div className="flex items-center gap-3">
