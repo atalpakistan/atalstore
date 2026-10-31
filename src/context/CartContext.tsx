@@ -101,8 +101,11 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setItems([]);
   };
 
-  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = items.reduce((sum, item) => sum + item.total_price, 0);
+  const itemCount = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+  const subtotal = items.reduce((sum, item) => {
+    const itemTotal = Number(item.total_price) || ((Number(item.unit_price) || 0) * (Number(item.quantity) || 1));
+    return sum + itemTotal;
+  }, 0);
   const amountToFreeShipping = Math.max(0, freeShippingThreshold - subtotal);
 
   return (

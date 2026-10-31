@@ -633,6 +633,33 @@ router.post('/orders', (req, res) => {
   }
 });
 
+// Helper to normalize and verify order subtotal & financial amounts
+function normalizeOrder(order: any) {
+  if (!order) return order;
+
+  if (!order.items) {
+    order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
+  }
+
+  let computedSubtotal = 0;
+  if (Array.isArray(order.items)) {
+    for (const item of order.items) {
+      item.price = Number(item.price || 0);
+      item.quantity = Math.max(1, Number(item.quantity || 1));
+      item.total = Number(item.total) || (item.price * item.quantity);
+      computedSubtotal += item.total;
+    }
+  }
+
+  const existingSubtotal = Number(order.subtotal);
+  order.subtotal = !isNaN(existingSubtotal) && existingSubtotal > 0 ? existingSubtotal : computedSubtotal;
+  order.discount = Number(order.discount || 0);
+  order.shipping_fee = Number(order.shipping_fee !== undefined && order.shipping_fee !== null ? order.shipping_fee : 290);
+  order.total_amount = Number(order.total_amount) || Math.max(0, order.subtotal - order.discount + order.shipping_fee);
+
+  return order;
+}
+
 // Order Lookup / Confirmation Detail
 router.get('/orders/:id', (req, res) => {
   try {
@@ -658,8 +685,7 @@ router.get('/orders/:id', (req, res) => {
 
     if (!order) return res.status(404).json({ error: `Order #${rawId} was not found in our database.` });
 
-    order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-    res.json(order);
+    res.json(normalizeOrder(order));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -698,8 +724,7 @@ router.post('/orders/track', (req, res) => {
       }
     }
 
-    order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-    res.json(order);
+    res.json(normalizeOrder(order));
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -928,10 +953,8 @@ router.get('/orders/my', (req, res) => {
   const user = getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Please log in to view your orders' });
 
-  const orders = db.prepare('SELECT * FROM orders WHERE customer_id = ? OR customer_email = ? ORDER BY created_at DESC').all(user.id, user.email) as any[];
-  for (const o of orders) {
-    o.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id);
-  }
+  const rawOrders = db.prepare('SELECT * FROM orders WHERE customer_id = ? OR customer_email = ? ORDER BY created_at DESC').all(user.id, user.email) as any[];
+  const orders = rawOrders.map(o => normalizeOrder(o));
   res.json(orders);
 });
 
@@ -1286,10 +1309,8 @@ router.delete('/admin/categories/:id', requireAdmin, (req, res) => {
 // Admin Orders
 router.get('/admin/orders', requireAdmin, (req, res) => {
   try {
-    const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all() as any[];
-    for (const o of orders) {
-      o.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(o.id);
-    }
+    const rawOrders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all() as any[];
+    const orders = rawOrders.map(o => normalizeOrder(o));
     res.json(orders);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1335,11 +1356,8 @@ router.put('/admin/orders/:id', requireAdmin, async (req, res) => {
     `).run(`aud_${Date.now()}`, (req as any).user.id, orderId, JSON.stringify({ order_status, payment_status, tracking_number, tracking_courier, transaction_id }));
 
     const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
-    if (updatedOrder) {
-      updatedOrder.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId);
-    }
 
-    res.json({ success: true, order: updatedOrder });
+    res.json({ success: true, order: normalizeOrder(updatedOrder) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
