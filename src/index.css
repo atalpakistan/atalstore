@@ -28,3 +28,13 @@
 .tabular-nums {
   font-variant-numeric: tabular-nums;
 }
+
+@media (max-width: 640px) {
+  .header-container {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+  }
+  .mobile-friendly-header .nav-icons {
+    gap: 0.5rem;
+  }
+}

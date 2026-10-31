@@ -1232,29 +1232,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div>
-                        <label className="block font-semibold text-slate-700 mb-1">Primary Image URL or Upload File *</label>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            required
-                            value={editingProduct.images?.[0] || ''}
-                            onChange={(e) => setEditingProduct({ ...editingProduct, images: [e.target.value, ...(editingProduct.images?.slice(1) || [])] })}
-                            className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
-                            placeholder="https://... or upload image"
-                          />
-                          <label className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-semibold flex items-center gap-1 shrink-0">
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>Upload</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => handleImageUploadFile(e, (url) => {
-                                const currentImgs = editingProduct.images || [];
-                                setEditingProduct({ ...editingProduct, images: [url, ...currentImgs.slice(1)] });
-                              })}
-                            />
-                          </label>
+                        <label className="block font-semibold text-slate-700 mb-1">Product Images (Upload at least 3) *</label>
+                        <div className="space-y-2">
+                          {[0, 1, 2].map((i) => (
+                            <div key={i} className="flex gap-2">
+                              <input
+                                type="text"
+                                required={i === 0}
+                                value={editingProduct.images?.[i] || ''}
+                                onChange={(e) => {
+                                  const imgs = [...(editingProduct.images || [])];
+                                  imgs[i] = e.target.value;
+                                  setEditingProduct({ ...editingProduct, images: imgs });
+                                }}
+                                className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                                placeholder={`Image ${i + 1} URL`}
+                              />
+                              <label className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-semibold flex items-center gap-1 shrink-0">
+                                <Upload className="w-3.5 h-3.5" />
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => handleImageUploadFile(e, (url) => {
+                                    const imgs = [...(editingProduct.images || [])];
+                                    imgs[i] = url;
+                                    setEditingProduct({ ...editingProduct, images: imgs });
+                                  })}
+                                />
+                              </label>
+                            </div>
+                          ))}
                         </div>
                       </div>
 
