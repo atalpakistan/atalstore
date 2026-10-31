@@ -497,26 +497,36 @@ router.post('/orders', (req, res) => {
       }> = [];
 
       for (const item of items) {
+        // Force server-side lookup from canonical 'products' and 'product_variants' tables
         const prod = db.prepare('SELECT id, name, sale_price, available_stock, images FROM products WHERE id = ?').get(item.product_id) as any;
         if (!prod) {
-          throw new Error(`Product ${item.product_id} no longer exists.`);
+          throw new Error(`Product ${item.product_id} no longer exists in database.`);
         }
 
-        let unitPrice = prod.sale_price;
+        let canonicalUnitPrice = Number(prod.sale_price);
         let variantTitle: string | null = null;
         let itemImg: string = safeJsonParse<string[]>(prod.images, [])[0] || '/icon.svg';
 
         if (item.variant_id) {
           const variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?').get(item.variant_id, item.product_id) as any;
           if (variant) {
-            unitPrice = variant.price || unitPrice;
+            if (variant.price !== undefined && variant.price !== null && Number(variant.price) > 0) {
+              canonicalUnitPrice = Number(variant.price);
+            }
             variantTitle = `${variant.color_name || ''} ${variant.size || ''}`.trim() || null;
             if (variant.image_url) itemImg = variant.image_url;
             if (variant.stock < item.quantity) {
               throw new Error(`Insufficient stock for ${prod.name} (${variantTitle}). Only ${variant.stock} left.`);
             }
-            // Deduct variant stock
             db.prepare('UPDATE product_variants SET stock = stock - ? WHERE id = ?').run(item.quantity, item.variant_id);
+          }
+        }
+
+        if (isNaN(canonicalUnitPrice) || canonicalUnitPrice <= 0) {
+          // Fallback check to any frontend submitted unit price if database returned zero, but strictly require > 0
+          const clientPrice = Number(item.unit_price || item.price || item.sale_price);
+          if (!isNaN(clientPrice) && clientPrice > 0) {
+            canonicalUnitPrice = clientPrice;
           }
         }
 
@@ -527,12 +537,12 @@ router.post('/orders', (req, res) => {
         // Deduct product stock
         db.prepare("UPDATE products SET available_stock = available_stock - ?, updated_at = datetime('now') WHERE id = ?").run(item.quantity, prod.id);
 
-        const parsedUnitPrice = Number(unitPrice);
+        const parsedUnitPrice = canonicalUnitPrice;
         const parsedQuantity = Number(item.quantity) || 1;
 
         if (isNaN(parsedUnitPrice) || parsedUnitPrice <= 0) {
-          console.error(`🚨 [Order Error] Invalid or zero unit price for product ${prod.name} (ID: ${prod.id}):`, unitPrice);
-          throw new Error(`Product "${prod.name}" has an invalid price (Rs. ${unitPrice}). Cannot process order.`);
+          console.error(`🚨 [Order Error] Invalid or zero unit price for product ${prod.name} (ID: ${prod.id}):`, canonicalUnitPrice);
+          throw new Error(`Product "${prod.name}" has an invalid price (Rs. ${canonicalUnitPrice}). Cannot process order.`);
         }
 
         const lineTotal = parsedUnitPrice * parsedQuantity;
