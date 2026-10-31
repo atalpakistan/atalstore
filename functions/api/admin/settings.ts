@@ -1,5 +1,6 @@
 // Cloudflare Pages Function for /api/admin/settings
 import type { StoreSettings } from '../../../src/types';
+import { isSupabaseConfigured, fetchSettingsFromSupabase, updateSettingsInSupabase } from '../../../src/server/supabaseStore.js';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -140,15 +141,21 @@ export const onRequestOptions = async () => {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 };
 
-export const onRequestGet = async ({ request }: { request: Request }) => {
+export const onRequestGet = async (context: { request: Request; env?: any }) => {
+  const { request, env } = context;
   if (!verifyAdmin(request)) {
     return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403);
+  }
+  if (isSupabaseConfigured(env)) {
+    const sbSettings = await fetchSettingsFromSupabase(env);
+    if (sbSettings) return jsonResponse(sbSettings);
   }
   const settings = getStoredSettings();
   return jsonResponse(settings);
 };
 
-export const onRequestPut = async ({ request }: { request: Request }) => {
+export const onRequestPut = async (context: { request: Request; env?: any }) => {
+  const { request, env } = context;
   if (!verifyAdmin(request)) {
     return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403);
   }
@@ -160,8 +167,11 @@ export const onRequestPut = async ({ request }: { request: Request }) => {
     }
 
     const sanitizedUpdates = sanitizeAndValidateSettings(body);
-    const current = getStoredSettings();
+    if (isSupabaseConfigured(env)) {
+      await updateSettingsInSupabase(sanitizedUpdates, env);
+    }
 
+    const current = getStoredSettings();
     for (const [key, value] of Object.entries(sanitizedUpdates)) {
       current[key] = value;
     }
@@ -178,10 +188,11 @@ export const onRequestPut = async ({ request }: { request: Request }) => {
   }
 };
 
-export const onRequest = async ({ request }: { request: Request }) => {
+export const onRequest = async (context: { request: Request; env?: any }) => {
+  const { request } = context;
   if (request.method === 'OPTIONS') return onRequestOptions();
-  if (request.method === 'GET') return onRequestGet({ request });
-  if (request.method === 'PUT') return onRequestPut({ request });
+  if (request.method === 'GET') return onRequestGet(context);
+  if (request.method === 'PUT') return onRequestPut(context);
 
   return jsonResponse({ error: 'Method Not Allowed' }, 405, { Allow: 'GET, PUT, OPTIONS' });
 };

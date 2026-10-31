@@ -47,11 +47,24 @@ function StorefrontApp() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
 
-  // Handle browser back / forward navigation
+  // Handle browser back / forward navigation and Android gestures
   useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname);
+    const handlePopState = (e: PopStateEvent) => {
+      const path = window.location.pathname;
+      setCurrentPath(path);
+      if (path.startsWith('/category/')) {
+        setSelectedCategorySlug(path.replace('/category/', ''));
+      } else if (path === '/') {
+        setSelectedCategorySlug(null);
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     };
+
+    // Initialize category slug if starting on /category/:slug
+    if (window.location.pathname.startsWith('/category/')) {
+      setSelectedCategorySlug(window.location.pathname.replace('/category/', ''));
+    }
+
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
@@ -76,9 +89,22 @@ function StorefrontApp() {
 
   const navigateTo = (path: string) => {
     if (window.location.pathname !== path) {
-      window.history.pushState(null, '', path);
+      window.history.pushState({ path }, '', path);
       setCurrentPath(path);
+      if (path.startsWith('/category/')) {
+        setSelectedCategorySlug(path.replace('/category/', ''));
+      } else if (path === '/') {
+        setSelectedCategorySlug(null);
+      }
       window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleBackNavigation = (fallbackPath: string = '/') => {
+    if (window.history.length > 1 && window.history.state !== null) {
+      window.history.back();
+    } else {
+      navigateTo(fallbackPath);
     }
   };
 
@@ -131,7 +157,7 @@ function StorefrontApp() {
             </p>
             <div className="flex gap-2 justify-center pt-2">
               <button
-                onClick={() => navigateTo('/')}
+                onClick={() => handleBackNavigation('/')}
                 className="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl"
               >
                 Back to Store
@@ -150,7 +176,7 @@ function StorefrontApp() {
     }
     return (
       <AdminDashboard
-        onBackToStore={() => navigateTo('/')}
+        onBackToStore={() => handleBackNavigation('/')}
         onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
       />
     );
@@ -170,7 +196,7 @@ function StorefrontApp() {
         }}
         onNavigateCategory={(slug) => {
           setSelectedCategorySlug(slug);
-          navigateTo('/');
+          navigateTo(`/category/${slug}`);
           setTimeout(() => {
             document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
           }, 100);
@@ -188,14 +214,14 @@ function StorefrontApp() {
         {isProductRoute && productSlug ? (
           <ProductDetailPage
             productSlugOrId={productSlug}
-            onBack={() => navigateTo('/')}
+            onBack={() => handleBackNavigation(selectedCategorySlug ? `/category/${selectedCategorySlug}` : '/')}
             onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
             onBuyNow={handleBuyNow}
           />
         ) : isCheckoutRoute ? (
           <CheckoutPage
             settings={homepageData?.settings}
-            onBack={() => navigateTo('/')}
+            onBack={() => handleBackNavigation('/')}
             onOrderSuccess={(orderId) => navigateTo(`/order-success/${orderId}`)}
           />
         ) : isOrderSuccessRoute && orderSuccessId ? (

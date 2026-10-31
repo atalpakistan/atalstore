@@ -1,3 +1,25 @@
+import {
+  isSupabaseConfigured,
+  fetchSettingsFromSupabase,
+  updateSettingsInSupabase,
+  fetchCategoriesFromSupabase,
+  saveCategoryInSupabase,
+  deleteCategoryInSupabase,
+  fetchProductsFromSupabase,
+  fetchProductBySlugOrIdFromSupabase,
+  saveProductInSupabase,
+  deleteProductInSupabase,
+  fetchBannersFromSupabase,
+  saveBannerInSupabase,
+  deleteBannerInSupabase,
+  fetchSectionsFromSupabase,
+  saveSectionsInSupabase,
+  fetchOrdersFromSupabase,
+  updateOrderStatusInSupabase,
+  createOrderInSupabase,
+  uploadImageToSupabaseStorage,
+} from '../../src/server/supabaseStore.js';
+
 // Cloudflare Pages Wildcard Function for all /api/* routes
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -158,7 +180,9 @@ function verifyAdmin(request: Request): boolean {
   }
 }
 
-export const onRequest = async ({ request, params }: { request: Request; params: { path?: string[] } }) => {
+export const onRequest = async (context: { request: Request; params: { path?: string[] }; env?: any }) => {
+  const { request, params, env } = context;
+
   if (request.method === 'OPTIONS') {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
   }
@@ -174,11 +198,33 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
   // 1. /api/config
   if (endpoint === 'config' && request.method === 'GET') {
+    if (isSupabaseConfigured(env)) {
+      const sbSettings = await fetchSettingsFromSupabase(env);
+      if (sbSettings) return jsonResponse(sbSettings);
+    }
     return jsonResponse(state.settings);
   }
 
   // 2. /api/homepage
   if (endpoint === 'homepage' && request.method === 'GET') {
+    if (isSupabaseConfigured(env)) {
+      const settings = (await fetchSettingsFromSupabase(env)) || state.settings;
+      const sections = (await fetchSectionsFromSupabase(env)) || state.homepage_sections;
+      const banners = (await fetchBannersFromSupabase(env)) || state.banners;
+      const categories = (await fetchCategoriesFromSupabase(env)) || state.categories;
+      const products = (await fetchProductsFromSupabase(env)) || state.products;
+      return jsonResponse({
+        settings,
+        sections,
+        banners,
+        categories,
+        festive_deals: products.filter((p: any) => p.festive_deal === 1),
+        spotlight_products: products.filter((p: any) => p.spotlight === 1),
+        new_launches: products.filter((p: any) => p.new_launch === 1),
+        launch_soon: state.launch_soon,
+        catalog_sample: products.slice(0, 12),
+      });
+    }
     return jsonResponse({
       settings: state.settings,
       sections: state.homepage_sections,
@@ -194,11 +240,24 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
   // 3. /api/categories
   if (endpoint === 'categories' && request.method === 'GET') {
+    if (isSupabaseConfigured(env)) {
+      const cats = await fetchCategoriesFromSupabase(env);
+      if (cats) return jsonResponse(cats);
+    }
     return jsonResponse(state.categories);
   }
 
   // 4. /api/products
   if (endpoint === 'products' && request.method === 'GET') {
+    if (isSupabaseConfigured(env)) {
+      const prods = await fetchProductsFromSupabase(env);
+      if (prods) {
+        return jsonResponse({
+          products: prods,
+          pagination: { page: 1, limit: 50, total: prods.length, totalPages: 1 }
+        });
+      }
+    }
     return jsonResponse({
       products: state.products,
       pagination: { page: 1, limit: 50, total: state.products.length, totalPages: 1 }
@@ -208,6 +267,10 @@ export const onRequest = async ({ request, params }: { request: Request; params:
   // Single Product
   if (endpoint.startsWith('products/') && request.method === 'GET') {
     const slugOrId = endpoint.replace(/^products\//, '');
+    if (isSupabaseConfigured(env)) {
+      const res = await fetchProductBySlugOrIdFromSupabase(slugOrId, env);
+      if (res) return jsonResponse(res);
+    }
     const rawProduct = state.products.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
     if (!rawProduct) {
       return jsonResponse({ error: 'Product not found' }, 404);
@@ -237,6 +300,10 @@ export const onRequest = async ({ request, params }: { request: Request; params:
   if (endpoint === 'orders' && request.method === 'POST') {
     try {
       const body = await request.json();
+      if (isSupabaseConfigured(env)) {
+        const sbRes = await createOrderInSupabase(body, env);
+        if (sbRes.success) return jsonResponse({ success: true, order: sbRes.order });
+      }
       const orderId = `ATAL-2026-${state.orders.length + 10240}`;
       const newOrder = {
         id: orderId,
@@ -281,30 +348,45 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // A. Metrics
     if (endpoint === 'admin/metrics' && request.method === 'GET') {
-      const totalOrders = state.orders.length;
-      const totalSales = state.orders.reduce((sum: number, o: any) => sum + (o.total_amount || 0), 0);
+      let ordersList = state.orders;
+      let productsList = state.products;
+      if (isSupabaseConfigured(env)) {
+        ordersList = (await fetchOrdersFromSupabase(env)) || state.orders;
+        productsList = (await fetchProductsFromSupabase(env)) || state.products;
+      }
+      const totalOrders = ordersList.length;
+      const totalSales = ordersList.reduce((sum: number, o: any) => sum + (o.total_amount || 0), 0);
       return jsonResponse({
         totalOrders,
         todayOrders: totalOrders,
-        pendingOrders: state.orders.filter((o: any) => o.order_status === 'Pending').length,
-        processingOrders: state.orders.filter((o: any) => o.order_status === 'Processing').length,
-        shippedOrders: state.orders.filter((o: any) => o.order_status === 'Shipped').length,
-        deliveredOrders: state.orders.filter((o: any) => o.order_status === 'Delivered').length,
-        cancelledOrders: state.orders.filter((o: any) => o.order_status === 'Cancelled').length,
+        pendingOrders: ordersList.filter((o: any) => o.order_status === 'Pending').length,
+        processingOrders: ordersList.filter((o: any) => o.order_status === 'Processing').length,
+        shippedOrders: ordersList.filter((o: any) => o.order_status === 'Shipped').length,
+        deliveredOrders: ordersList.filter((o: any) => o.order_status === 'Delivered').length,
+        cancelledOrders: ordersList.filter((o: any) => o.order_status === 'Cancelled').length,
         totalSales,
         todaySales: totalSales,
-        lowStockProducts: state.products.filter((p: any) => (p.available_stock || 0) <= (p.low_stock_threshold || 5)),
-        recentOrders: state.orders.slice(0, 8)
+        lowStockProducts: productsList.filter((p: any) => (p.available_stock || 0) <= (p.low_stock_threshold || 5)),
+        recentOrders: ordersList.slice(0, 8)
       });
     }
 
     // B. Products
     if (endpoint === 'admin/products') {
       if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const prods = await fetchProductsFromSupabase(env);
+          if (prods) return jsonResponse(prods);
+        }
         return jsonResponse(state.products);
       }
       if (request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveProductInSupabase(body, env);
+          if (sbRes.success) return jsonResponse(sbRes);
+          return jsonResponse({ error: sbRes.error || 'Failed to save product to database' }, 500);
+        }
         const id = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const rawSlug = (body.slug || body.name || 'product').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         const slug = rawSlug || `product-${Date.now()}`;
@@ -337,20 +419,32 @@ export const onRequest = async ({ request, params }: { request: Request; params:
       const sub = endpoint.replace('admin/products/', '');
       if (sub.endsWith('/duplicate') && request.method === 'POST') {
         const origId = sub.replace('/duplicate', '');
-        const orig = state.products.find((p: any) => p.id === origId);
+        let orig = state.products.find((p: any) => p.id === origId);
+        if (isSupabaseConfigured(env)) {
+          const allProds = await fetchProductsFromSupabase(env);
+          if (allProds) orig = allProds.find((p: any) => p.id === origId);
+        }
         if (!orig) return jsonResponse({ error: 'Original product not found' }, 404);
         const id = `prod_${Date.now()}`;
         const slug = `${orig.slug}-copy-${Date.now().toString().slice(-4)}`;
         const copy = { ...orig, id, slug, name: `${orig.name} (Copy)` };
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveProductInSupabase(copy, env);
+          if (sbRes.success) return jsonResponse(sbRes);
+        }
         state.products.unshift(copy);
         return jsonResponse({ success: true, id, slug });
       }
 
       const prodId = sub;
-      const index = state.products.findIndex((p: any) => p.id === prodId);
-
       if (request.method === 'PUT') {
         const body = await request.json().catch(() => ({}));
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveProductInSupabase({ ...body, id: prodId }, env);
+          if (sbRes.success) return jsonResponse(sbRes);
+          return jsonResponse({ error: sbRes.error || 'Failed to update product in database' }, 500);
+        }
+        const index = state.products.findIndex((p: any) => p.id === prodId);
         if (index >= 0) {
           state.products[index] = { ...state.products[index], ...body, updated_at: new Date().toISOString() };
           return jsonResponse({ success: true, slug: state.products[index].slug });
@@ -359,6 +453,12 @@ export const onRequest = async ({ request, params }: { request: Request; params:
       }
 
       if (request.method === 'DELETE') {
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await deleteProductInSupabase(prodId, env);
+          if (sbRes.success) return jsonResponse({ success: true });
+          return jsonResponse({ error: sbRes.error || 'Failed to delete product from database' }, 500);
+        }
+        const index = state.products.findIndex((p: any) => p.id === prodId);
         if (index >= 0) {
           state.products.splice(index, 1);
           return jsonResponse({ success: true });
@@ -369,9 +469,20 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // C. Categories
     if (endpoint === 'admin/categories') {
-      if (request.method === 'GET') return jsonResponse(state.categories);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const cats = await fetchCategoriesFromSupabase(env);
+          if (cats) return jsonResponse(cats);
+        }
+        return jsonResponse(state.categories);
+      }
       if (request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveCategoryInSupabase(body, env);
+          if (sbRes.success) return jsonResponse(sbRes);
+          return jsonResponse({ error: sbRes.error || 'Failed to save category to database' }, 500);
+        }
         const id = `cat_${Date.now()}`;
         const slug = (body.name || 'category').toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const cat = { ...body, id, slug };
@@ -382,9 +493,14 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     if (endpoint.startsWith('admin/categories/')) {
       const catId = endpoint.replace('admin/categories/', '');
-      const idx = state.categories.findIndex((c: any) => c.id === catId);
       if (request.method === 'PUT') {
         const body = await request.json().catch(() => ({}));
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveCategoryInSupabase({ ...body, id: catId }, env);
+          if (sbRes.success) return jsonResponse(sbRes);
+          return jsonResponse({ error: sbRes.error || 'Failed to update category' }, 500);
+        }
+        const idx = state.categories.findIndex((c: any) => c.id === catId);
         if (idx >= 0) {
           state.categories[idx] = { ...state.categories[idx], ...body };
           return jsonResponse({ success: true, slug: state.categories[idx].slug });
@@ -392,10 +508,16 @@ export const onRequest = async ({ request, params }: { request: Request; params:
         return jsonResponse({ error: 'Category not found' }, 404);
       }
       if (request.method === 'DELETE') {
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await deleteCategoryInSupabase(catId, env);
+          if (sbRes.success) return jsonResponse({ success: true });
+          return jsonResponse({ error: sbRes.error || 'Failed to delete category' }, 400);
+        }
         const inUse = state.products.some((p: any) => p.category_id === catId);
         if (inUse) {
           return jsonResponse({ error: 'Cannot delete category: Contains assigned products.' }, 400);
         }
+        const idx = state.categories.findIndex((c: any) => c.id === catId);
         if (idx >= 0) state.categories.splice(idx, 1);
         return jsonResponse({ success: true });
       }
@@ -403,11 +525,21 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // D. Orders
     if (endpoint === 'admin/orders') {
-      if (request.method === 'GET') return jsonResponse(state.orders);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const orders = await fetchOrdersFromSupabase(env);
+          if (orders) return jsonResponse(orders);
+        }
+        return jsonResponse(state.orders);
+      }
     }
     if (endpoint.startsWith('admin/orders/') && request.method === 'PUT') {
       const orderId = endpoint.replace('admin/orders/', '');
       const body = await request.json().catch(() => ({}));
+      if (isSupabaseConfigured(env)) {
+        const ok = await updateOrderStatusInSupabase(orderId, body, env);
+        if (ok) return jsonResponse({ success: true });
+      }
       const ord = state.orders.find((o: any) => o.id === orderId);
       if (ord) {
         Object.assign(ord, body);
@@ -418,9 +550,19 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // E. Banners
     if (endpoint === 'admin/banners') {
-      if (request.method === 'GET') return jsonResponse(state.banners);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const banners = await fetchBannersFromSupabase(env);
+          if (banners) return jsonResponse(banners);
+        }
+        return jsonResponse(state.banners);
+      }
       if (request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveBannerInSupabase(body, env);
+          if (sbRes.success) return jsonResponse(sbRes);
+        }
         const id = `ban_${Date.now()}`;
         state.banners.push({ ...body, id });
         return jsonResponse({ success: true, id });
@@ -428,13 +570,22 @@ export const onRequest = async ({ request, params }: { request: Request; params:
     }
     if (endpoint.startsWith('admin/banners/')) {
       const banId = endpoint.replace('admin/banners/', '');
-      const idx = state.banners.findIndex((b: any) => b.id === banId);
       if (request.method === 'PUT') {
         const body = await request.json().catch(() => ({}));
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await saveBannerInSupabase({ ...body, id: banId }, env);
+          if (sbRes.success) return jsonResponse({ success: true });
+        }
+        const idx = state.banners.findIndex((b: any) => b.id === banId);
         if (idx >= 0) Object.assign(state.banners[idx], body);
         return jsonResponse({ success: true });
       }
       if (request.method === 'DELETE') {
+        if (isSupabaseConfigured(env)) {
+          const sbRes = await deleteBannerInSupabase(banId, env);
+          if (sbRes.success) return jsonResponse({ success: true });
+        }
+        const idx = state.banners.findIndex((b: any) => b.id === banId);
         if (idx >= 0) state.banners.splice(idx, 1);
         return jsonResponse({ success: true });
       }
@@ -442,10 +593,19 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // F. Homepage Sections
     if (endpoint === 'admin/homepage') {
-      if (request.method === 'GET') return jsonResponse(state.homepage_sections);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const sections = await fetchSectionsFromSupabase(env);
+          if (sections) return jsonResponse(sections);
+        }
+        return jsonResponse(state.homepage_sections);
+      }
       if (request.method === 'PUT') {
         const { sections } = await request.json().catch(() => ({}));
         if (Array.isArray(sections)) {
+          if (isSupabaseConfigured(env)) {
+            await saveSectionsInSupabase(sections, env);
+          }
           state.homepage_sections = sections;
           return jsonResponse({ success: true, message: 'Homepage sections updated.' });
         }
@@ -496,11 +656,20 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // I. Settings
     if (endpoint === 'admin/settings') {
-      if (request.method === 'GET') return jsonResponse(state.settings);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const sbSettings = await fetchSettingsFromSupabase(env);
+          if (sbSettings) return jsonResponse(sbSettings);
+        }
+        return jsonResponse(state.settings);
+      }
       if (request.method === 'PUT') {
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
           return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400);
+        }
+        if (isSupabaseConfigured(env)) {
+          await updateSettingsInSupabase(body, env);
         }
         for (const [k, v] of Object.entries(body)) {
           if (typeof k === 'string' && k.trim().length > 0) {
@@ -548,15 +717,29 @@ export const onRequest = async ({ request, params }: { request: Request; params:
 
     // K. Backup Export & Import
     if (endpoint === 'admin/backup/export' && request.method === 'GET') {
+      let currentSettings = state.settings;
+      let currentCategories = state.categories;
+      let currentProducts = state.products;
+      let currentBanners = state.banners;
+      let currentSections = state.homepage_sections;
+
+      if (isSupabaseConfigured(env)) {
+        currentSettings = (await fetchSettingsFromSupabase(env)) || currentSettings;
+        currentCategories = (await fetchCategoriesFromSupabase(env)) || currentCategories;
+        currentProducts = (await fetchProductsFromSupabase(env)) || currentProducts;
+        currentBanners = (await fetchBannersFromSupabase(env)) || currentBanners;
+        currentSections = (await fetchSectionsFromSupabase(env)) || currentSections;
+      }
+
       return jsonResponse({
         version: '1.0.0',
         exported_at: new Date().toISOString(),
         store_name: 'ATAL STORE',
-        settings: Object.entries(state.settings).map(([key, value]) => ({ key, value })),
-        categories: state.categories,
-        products: state.products,
-        banners: state.banners,
-        homepage_sections: state.homepage_sections,
+        settings: Object.entries(currentSettings).map(([key, value]) => ({ key, value })),
+        categories: currentCategories,
+        products: currentProducts,
+        banners: currentBanners,
+        homepage_sections: currentSections,
         launch_soon: state.launch_soon,
         coupons: state.coupons
       });
@@ -577,6 +760,24 @@ export const onRequest = async ({ request, params }: { request: Request; params:
         if (dryRun) {
           return jsonResponse({ success: true, dryRun: true, preview, message: 'Backup validation passed. Ready to restore.' });
         }
+
+        if (isSupabaseConfigured(env)) {
+          if (Array.isArray(backupData.categories)) {
+            for (const cat of backupData.categories) await saveCategoryInSupabase(cat, env);
+          }
+          if (Array.isArray(backupData.products)) {
+            for (const p of backupData.products) await saveProductInSupabase(p, env);
+          }
+          if (Array.isArray(backupData.banners)) {
+            for (const b of backupData.banners) await saveBannerInSupabase(b, env);
+          }
+          if (Array.isArray(backupData.settings)) {
+            const setObj: Record<string, any> = {};
+            for (const s of backupData.settings) if (s.key) setObj[s.key] = s.value;
+            await updateSettingsInSupabase(setObj, env);
+          }
+        }
+
         if (Array.isArray(backupData.categories)) state.categories = backupData.categories;
         if (Array.isArray(backupData.products)) state.products = backupData.products;
         if (Array.isArray(backupData.banners)) state.banners = backupData.banners;
@@ -598,7 +799,10 @@ export const onRequest = async ({ request, params }: { request: Request; params:
         if (!filename || !base64Data) {
           return jsonResponse({ error: 'Filename and base64Data required' }, 400);
         }
-        // Return base64Data directly as valid image URL for Cloudflare edge worker
+        if (isSupabaseConfigured(env)) {
+          const publicUrl = await uploadImageToSupabaseStorage(filename, base64Data, env);
+          return jsonResponse({ success: true, url: publicUrl });
+        }
         return jsonResponse({ success: true, url: base64Data });
       } catch (err: any) {
         return jsonResponse({ error: err?.message || 'Upload failed' }, 500);
@@ -606,6 +810,5 @@ export const onRequest = async ({ request, params }: { request: Request; params:
     }
   }
 
-  // Unmatched API fallback JSON 404
-  return jsonResponse({ error: `API route not found: ${request.method} ${url.pathname}` }, 404);
+  return jsonResponse({ error: `API route not found: ${request.method} ${endpoint}` }, 404);
 };
