@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { db, hashPassword } from './db.js';
 import { JazzCashGateway, EasypaisaGateway } from './payments.js';
+import { isSupabaseConfigured, updateOrderStatusInSupabase } from './supabaseStore.js';
 
 export const router = express.Router();
 
@@ -562,25 +563,30 @@ router.post('/orders', (req, res) => {
       const shipping_fee = subtotal >= freeThreshold ? 0 : standardShippingFee;
       const total_amount = subtotal - discount + shipping_fee;
 
-      // Generate unique order number
-      const orderCount = (db.prepare('SELECT COUNT(*) as c FROM orders').get() as { c: number }).c + 10240;
-      const orderId = `ATAL-2026-${orderCount}`;
+      // Generate clean, memorable, trackable unique order number (e.g. ATL-582914)
+      let orderId = `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
+      let attempts = 0;
+      while (db.prepare('SELECT id FROM orders WHERE id = ?').get(orderId) && attempts < 10) {
+        orderId = `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
+        attempts++;
+      }
 
       const initialPaymentStatus = payment_method === 'cod' ? 'pending' : 'pending';
       const initialOrderStatus = 'Pending';
+      const cleanTxId = (transaction_id || '').trim();
 
       // Insert Order
       db.prepare(`
         INSERT INTO orders (
           id, customer_id, customer_name, customer_email, phone, province, city, area, street_address, landmark,
-          order_notes, subtotal, discount, shipping_fee, total_amount, payment_method, payment_status, order_status, transaction_id
+          order_notes, subtotal, discount, shipping_fee, total_amount, payment_method, payment_status, order_status, transaction_id, transaction_ref
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-          ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
       `).run(
-        orderId, customer_id || null, customer_name, customer_email || null, cleanPhone, province, city, area, street_address, landmark || null,
-        order_notes || null, subtotal, discount, shipping_fee, total_amount, payment_method, initialPaymentStatus, initialOrderStatus, transaction_id.trim()
+        orderId, customer_id || null, customer_name, customer_email || null, cleanPhone, province, city, area || city || 'Central', street_address, landmark || null,
+        order_notes || null, subtotal, discount, shipping_fee, total_amount, payment_method, initialPaymentStatus, initialOrderStatus, cleanTxId, cleanTxId
       );
 
       // Insert Order Items
@@ -600,7 +606,7 @@ router.post('/orders', (req, res) => {
         `aud_${Date.now()}`,
         customer_id || 'guest',
         orderId,
-        JSON.stringify({ total: total_amount, payment_method, phone: cleanPhone, transaction_id })
+        JSON.stringify({ total: total_amount, payment_method, phone: cleanPhone, transaction_id: cleanTxId })
       );
 
       return {
@@ -609,7 +615,8 @@ router.post('/orders', (req, res) => {
         discount,
         shipping_fee,
         total_amount,
-        payment_method
+        payment_method,
+        transaction_id: cleanTxId
       };
     });
 
@@ -626,7 +633,8 @@ router.post('/orders', (req, res) => {
 // Order Lookup / Confirmation Detail
 router.get('/orders/:id', (req, res) => {
   try {
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+    const rawId = req.params.id?.trim();
+    const order = db.prepare('SELECT * FROM orders WHERE UPPER(TRIM(id)) = UPPER(?)').get(rawId) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
 
     order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
@@ -636,23 +644,37 @@ router.get('/orders/:id', (req, res) => {
   }
 });
 
-// Public Order Tracking by Order ID and Phone
+// Public Order Tracking by Order ID (or Consignment #) and optional Phone
 router.post('/orders/track', (req, res) => {
   try {
     const { order_id, phone } = req.body;
-    if (!order_id || !phone) {
-      return res.status(400).json({ error: 'Order Number and Pakistani Phone Number are required' });
+    if (!order_id || !order_id.toString().trim()) {
+      return res.status(400).json({ error: 'Please enter your Order Number or Courier Consignment Number.' });
     }
 
-    const cleanInputPhone = phone.replace(/[\s-]/g, '').slice(-10); // match last 10 digits
-    const order = db.prepare('SELECT * FROM orders WHERE UPPER(id) = UPPER(?)').get(order_id.trim()) as any;
+    const cleanInputOrder = order_id.toString().trim();
+    // Search by exact ID, stripped prefix (e.g. 582910 matching ATL-582910), or courier tracking number
+    let order = db.prepare(`
+      SELECT * FROM orders 
+      WHERE UPPER(TRIM(id)) = UPPER(?) 
+         OR UPPER(TRIM(id)) = UPPER(?)
+         OR UPPER(TRIM(id)) = UPPER(?)
+         OR UPPER(TRIM(tracking_number)) = UPPER(?)
+         OR UPPER(TRIM(transaction_id)) = UPPER(?)
+      LIMIT 1
+    `).get(cleanInputOrder, `ATL-${cleanInputOrder}`, `ATAL-${cleanInputOrder}`, cleanInputOrder, cleanInputOrder) as any;
+
     if (!order) {
-      return res.status(404).json({ error: 'No order found with this Order Number.' });
+      return res.status(404).json({ error: `No active order found with identifier "${cleanInputOrder}". Please verify your Order Number or SMS receipt.` });
     }
 
-    const cleanOrderPhone = (order.phone || '').replace(/[\s-]/g, '').slice(-10);
-    if (cleanOrderPhone !== cleanInputPhone) {
-      return res.status(403).json({ error: 'The phone number provided does not match the order record.' });
+    // If phone number is supplied, perform safe validation on the last 7 digits
+    if (phone && phone.toString().trim()) {
+      const cleanInputDigits = phone.toString().replace(/\D/g, '').slice(-7);
+      const cleanOrderDigits = (order.phone || '').toString().replace(/\D/g, '').slice(-7);
+      if (cleanInputDigits && cleanOrderDigits && cleanInputDigits !== cleanOrderDigits) {
+        return res.status(403).json({ error: 'The provided phone number does not match this order. Please verify your phone number.' });
+      }
     }
 
     order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
@@ -1253,21 +1275,50 @@ router.get('/admin/orders', requireAdmin, (req, res) => {
   }
 });
 
-router.put('/admin/orders/:id', requireAdmin, (req, res) => {
+router.put('/admin/orders/:id', requireAdmin, async (req, res) => {
   try {
-    const { order_status, payment_status, tracking_number, tracking_courier } = req.body;
+    const orderId = req.params.id;
+    const existing = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+    if (!existing) return res.status(404).json({ error: 'Order not found' });
+
+    const order_status = req.body.order_status !== undefined ? req.body.order_status : existing.order_status;
+    const payment_status = req.body.payment_status !== undefined ? req.body.payment_status : existing.payment_status;
+    const tracking_number = req.body.tracking_number !== undefined ? req.body.tracking_number : existing.tracking_number;
+    const tracking_courier = req.body.tracking_courier !== undefined ? req.body.tracking_courier : existing.tracking_courier;
+    const transaction_id = req.body.transaction_id !== undefined ? req.body.transaction_id : (existing.transaction_id || existing.transaction_ref);
+
     db.prepare(`
       UPDATE orders 
-      SET order_status = ?, payment_status = ?, tracking_number = ?, tracking_courier = ?, updated_at = datetime('now')
+      SET order_status = ?, payment_status = ?, tracking_number = ?, tracking_courier = ?, transaction_id = ?, transaction_ref = ?, updated_at = datetime('now')
       WHERE id = ?
-    `).run(order_status, payment_status, tracking_number || null, tracking_courier || null, req.params.id);
+    `).run(order_status, payment_status, tracking_number || null, tracking_courier || null, transaction_id || null, transaction_id || null, orderId);
+
+    // Sync to Supabase if configured
+    if (isSupabaseConfigured()) {
+      try {
+        await updateOrderStatusInSupabase(orderId, {
+          order_status,
+          payment_status,
+          tracking_number,
+          tracking_courier,
+          transaction_id,
+        });
+      } catch (sbErr) {
+        console.warn('Supabase order update sync warning:', sbErr);
+      }
+    }
 
     db.prepare(`
       INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details)
       VALUES (?, ?, 'ORDER_STATUS_UPDATED', 'ORDER', ?, ?)
-    `).run(`aud_${Date.now()}`, (req as any).user.id, req.params.id, JSON.stringify({ order_status, payment_status, tracking_number }));
+    `).run(`aud_${Date.now()}`, (req as any).user.id, orderId, JSON.stringify({ order_status, payment_status, tracking_number, tracking_courier, transaction_id }));
 
-    res.json({ success: true });
+    const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+    if (updatedOrder) {
+      updatedOrder.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId);
+    }
+
+    res.json({ success: true, order: updatedOrder });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

@@ -192,12 +192,13 @@ export interface Order {
   discount: number;
   shipping_fee: number;
   total_amount: number;
-  payment_method: 'cod' | 'jazzcash' | 'easypaisa';
+  payment_method: 'cod' | 'jazzcash' | 'easypaisa' | 'hbl' | string;
   payment_status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded';
   order_status: 'Pending' | 'Confirmed' | 'Processing' | 'Ready to Ship' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'Refunded';
   tracking_number?: string;
   tracking_courier?: string;
   transaction_ref?: string;
+  transaction_id?: string;
   created_at: string;
   updated_at: string;
   items?: OrderItem[];

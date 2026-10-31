@@ -319,7 +319,7 @@ export function ensureColumnExists(tableName: string, columnName: string, colTyp
 
 function updateCoreSettings() {
   const coreSettings: Record<string, string> = {
-    store_name: 'ATAL STORE',
+    store_name: 'ATAL',
     tagline: 'Smart Shop. Live Better',
     announcement_bar_text: '🇵🇰 Free Nationwide Delivery on orders above Rs. 9,999 | Rs. 290 Delivery Fee | 100% Genuine Guaranteed',
     announcement_bar_enabled: 'true',

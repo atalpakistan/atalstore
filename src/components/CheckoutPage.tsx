@@ -214,7 +214,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     return (
       <div className="max-w-xl mx-auto px-4 py-20 text-center">
         <h2 className="font-display text-2xl font-bold text-slate-800 mb-2">Your Bag is Empty</h2>
-        <p className="text-sm text-slate-500 mb-6">Please add items from the ATAL STORE collection to proceed with checkout.</p>
+        <p className="text-sm text-slate-500 mb-6">Please add items from the ATAL collection to proceed with checkout.</p>
         <button
           onClick={onBack}
           className="px-6 py-3 bg-[#093824] text-amber-300 font-bold text-xs rounded-xl hover:bg-[#062819] transition"

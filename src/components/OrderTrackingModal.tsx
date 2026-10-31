@@ -69,25 +69,27 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
         <form onSubmit={handleTrackSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Order Number <span className="text-rose-500">*</span>
+              Order Number or Courier Consignment # <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               required
-              placeholder="e.g. ATAL-PK-10240"
+              placeholder="e.g. ATL-582914 or TCS / Trax Consignment #"
               value={orderId}
               onChange={(e) => setOrderId(e.target.value.toUpperCase())}
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm uppercase font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#093824]"
             />
+            <span className="text-[11px] text-slate-400 mt-1 block">
+              Enter your official ATAL Order Number (e.g. ATL-XXXXXX) or your courier tracking number.
+            </span>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Registered Pakistani Phone Number <span className="text-rose-500">*</span>
+              Registered Phone Number <span className="text-slate-400 font-normal">(Optional for verification)</span>
             </label>
             <input
               type="tel"
-              required
               placeholder="e.g. 0300 1234567"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -115,29 +117,68 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
         {/* Result Container */}
         {order && (
           <div className="mt-6 pt-6 border-t border-slate-200 space-y-5 animate-in fade-in">
-            <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center justify-between text-xs pb-3 border-b border-slate-100">
               <div>
-                <span className="text-slate-400 block">Status</span>
-                <span className="font-bold text-emerald-800 text-sm">{order.order_status}</span>
+                <span className="text-slate-400 block text-[11px]">Order Number</span>
+                <span className="font-mono font-bold text-[#093824] text-base">{order.id}</span>
               </div>
               <div className="text-right">
-                <span className="text-slate-400 block">Total Amount</span>
-                <span className="font-bold text-[#093824] text-sm tabular-nums">
-                  Rs. {order.total_amount.toLocaleString('en-PK')}
+                <span className="text-slate-400 block text-[11px]">Order Status</span>
+                <span className={`font-bold px-2.5 py-1 rounded-full text-xs inline-block ${
+                  order.order_status === 'Delivered'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : order.order_status === 'Shipped' || order.order_status === 'Ready to Ship'
+                    ? 'bg-blue-100 text-blue-800'
+                    : order.order_status === 'Cancelled'
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {order.order_status}
                 </span>
               </div>
             </div>
 
+            {/* Transaction / Payment Verification Badge */}
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Payment Method & Status</span>
+                <span className="font-bold text-slate-800 uppercase">
+                  {order.payment_method === 'cod' ? 'Cash on Delivery (COD)' : order.payment_method?.toUpperCase()}
+                </span>
+                <span className={`ml-2 text-[10px] font-bold px-2 py-0.5 rounded ${
+                  order.payment_status === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {order.payment_status.toUpperCase()}
+                </span>
+              </div>
+              {(order.transaction_id || order.transaction_ref) && (
+                <div className="sm:text-right">
+                  <span className="text-slate-400 block text-[11px]">Transaction ID</span>
+                  <span className="font-mono font-bold text-slate-700 bg-white px-2 py-0.5 rounded border border-slate-200 inline-block">
+                    {order.transaction_id || order.transaction_ref}
+                  </span>
+                </div>
+              )}
+            </div>
+
             {order.tracking_number && (
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-950 flex items-center justify-between">
-                <span>Courier: <strong>{order.tracking_courier || 'TCS Express'}</strong></span>
-                <span className="font-mono font-bold">Consignment: {order.tracking_number}</span>
+              <div className="p-3.5 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <span className="text-emerald-700 font-semibold block text-[11px]">Courier Partner</span>
+                  <span className="font-bold">{order.tracking_courier || 'TCS Express'}</span>
+                </div>
+                <div className="sm:text-right">
+                  <span className="text-emerald-700 font-semibold block text-[11px]">Consignment #</span>
+                  <span className="font-mono font-bold text-emerald-900 bg-white px-2.5 py-1 rounded-lg border border-emerald-300 inline-block">
+                    {order.tracking_number}
+                  </span>
+                </div>
               </div>
             )}
 
             {/* Timeline Progress */}
             <div>
-              <p className="text-xs font-semibold text-slate-700 mb-3">Fulfillment Progress</p>
+              <p className="text-xs font-semibold text-slate-700 mb-3">Fulfillment Timeline</p>
               <div className="space-y-3">
                 {ORDER_STEPS.slice(0, 5).map((step, idx) => {
                   const isDone = currentStepIdx >= idx;
@@ -147,7 +188,7 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
                       <div
                         className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
                           isDone
-                            ? 'bg-emerald-600 text-white'
+                            ? 'bg-emerald-600 text-white shadow-sm'
                             : 'bg-slate-100 text-slate-400 border border-slate-200'
                         }`}
                       >
@@ -162,10 +203,34 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
               </div>
             </div>
 
+            {/* Order Items */}
+            {order.items && order.items.length > 0 && (
+              <div className="pt-3 border-t border-slate-100">
+                <span className="text-xs font-semibold text-slate-700 block mb-2">Ordered Items ({order.items.length}):</span>
+                <div className="max-h-40 overflow-y-auto space-y-2 pr-1 no-scrollbar">
+                  {order.items.map((it) => (
+                    <div key={it.id} className="flex items-center justify-between gap-2 text-xs py-1">
+                      <div className="flex items-center gap-2 truncate">
+                        <img
+                          src={it.image_url || '/icon.svg'}
+                          alt={it.product_name}
+                          className="w-8 h-8 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                        />
+                        <span className="text-slate-800 font-medium truncate">{it.product_name} &times; {it.quantity}</span>
+                      </div>
+                      <span className="font-bold text-slate-900 tabular-nums shrink-0">
+                        Rs. {it.total.toLocaleString('en-PK')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Destination */}
             <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600">
               <span className="text-slate-400 block mb-0.5">Shipping Destination</span>
-              <p className="font-semibold text-slate-800">{order.customer_name}</p>
+              <p className="font-semibold text-slate-800">{order.customer_name} ({order.phone})</p>
               <p>{order.street_address}, {order.city}, {order.province}</p>
             </div>
           </div>

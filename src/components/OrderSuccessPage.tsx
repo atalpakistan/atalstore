@@ -58,7 +58,7 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
           Order Confirmed
         </span>
         <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900 mt-1">
-          Thank you for choosing ATAL STORE!
+          Thank you for choosing ATAL!
         </h1>
         <p className="text-xs sm:text-sm text-slate-500 mt-1.5 max-w-md mx-auto">
           Your order has been recorded in our permanent database and is being packed for express courier dispatch.

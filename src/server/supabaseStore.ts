@@ -383,6 +383,8 @@ export async function updateOrderStatusInSupabase(id: string, body: any, envObj?
   if (body.payment_status) updates.payment_status = body.payment_status;
   if (body.tracking_number !== undefined) updates.tracking_number = body.tracking_number;
   if (body.tracking_courier !== undefined) updates.tracking_courier = body.tracking_courier;
+  if (body.transaction_id !== undefined) updates.transaction_id = body.transaction_id;
+  if (body.transaction_ref !== undefined) updates.transaction_ref = body.transaction_ref;
 
   const { error } = await client.from('orders').update(updates).eq('id', id);
   if (error) {
@@ -396,7 +398,8 @@ export async function createOrderInSupabase(body: any, envObj?: any): Promise<{ 
   const client = getSupabaseClient(envObj);
   if (!client) return { success: false, error: 'Supabase not configured' };
 
-  const orderId = `ATAL-2026-${Date.now().toString().slice(-5)}`;
+  const orderId = body.id || `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
+  const cleanTxId = body.transaction_id || body.transaction_ref || null;
   const orderRow = {
     id: orderId,
     customer_id: body.customer_id || null,
@@ -416,7 +419,8 @@ export async function createOrderInSupabase(body: any, envObj?: any): Promise<{ 
     payment_method: body.payment_method || 'cod',
     payment_status: 'pending',
     order_status: 'Pending',
-    transaction_id: body.transaction_id || null,
+    transaction_id: cleanTxId,
+    transaction_ref: cleanTxId,
   };
 
   const { error: ordErr } = await client.from('orders').insert(orderRow);

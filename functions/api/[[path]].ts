@@ -40,7 +40,7 @@ function jsonResponse(data: any, status = 200, headers: Record<string, string> =
 
 // Initial Default State
 const DEFAULT_SETTINGS: Record<string, any> = {
-  store_name: 'ATAL STORE',
+  store_name: 'ATAL',
   tagline: 'Smart Shop. Live Better',
   announcement_bar_text: '🇵🇰 Free Nationwide Delivery on orders above Rs. 9,999 | Rs. 290 Delivery Fee | 100% Genuine Guaranteed',
   announcement_bar_enabled: true,
@@ -300,19 +300,32 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   if (endpoint === 'orders' && request.method === 'POST') {
     try {
       const body = await request.json();
+      const cleanTxId = (body.transaction_id || body.transaction_ref || '').toString().trim();
+      const generatedOrderId = `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
+
       if (isSupabaseConfigured(env)) {
-        const sbRes = await createOrderInSupabase(body, env);
+        const sbRes = await createOrderInSupabase({ ...body, id: generatedOrderId, transaction_id: cleanTxId, transaction_ref: cleanTxId }, env);
         if (sbRes.success) return jsonResponse({ success: true, order: sbRes.order });
       }
-      const orderId = `ATAL-2026-${state.orders.length + 10240}`;
+
       const newOrder = {
-        id: orderId,
+        id: generatedOrderId,
         customer_name: body.customer_name || 'Customer',
         phone: body.phone,
-        total_amount: body.subtotal || 1000,
+        province: body.province || 'Punjab',
+        city: body.city || 'Lahore',
+        area: body.area || '',
+        street_address: body.street_address || '',
+        landmark: body.landmark || null,
+        subtotal: Number(body.subtotal || 0),
+        discount: Number(body.discount || 0),
+        shipping_fee: Number(body.shipping_fee || 290),
+        total_amount: Number(body.total_amount || body.subtotal || 0),
         payment_method: body.payment_method || 'cod',
         payment_status: 'pending',
         order_status: 'Pending',
+        transaction_id: cleanTxId,
+        transaction_ref: cleanTxId,
         created_at: new Date().toISOString(),
         items: body.items || []
       };
@@ -320,6 +333,61 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       return jsonResponse({ success: true, order: newOrder });
     } catch (err: any) {
       return jsonResponse({ error: err?.message || 'Failed to place order' }, 400);
+    }
+  }
+
+  // Order Lookup by ID
+  if (endpoint.startsWith('orders/') && request.method === 'GET' && !endpoint.startsWith('orders/track')) {
+    const orderId = endpoint.replace(/^orders\//, '').trim();
+    if (isSupabaseConfigured(env)) {
+      const orders = await fetchOrdersFromSupabase(env);
+      const match = orders?.find((o: any) => o.id?.toUpperCase() === orderId.toUpperCase());
+      if (match) return jsonResponse(match);
+    }
+    const match = state.orders.find((o: any) => o.id?.toUpperCase() === orderId.toUpperCase());
+    if (match) return jsonResponse(match);
+    return jsonResponse({ error: 'Order not found' }, 404);
+  }
+
+  // Public Order Tracking
+  if (endpoint === 'orders/track' && request.method === 'POST') {
+    try {
+      const { order_id, phone } = await request.json();
+      if (!order_id || !order_id.toString().trim()) {
+        return jsonResponse({ error: 'Please enter your Order Number or Courier Consignment Number.' }, 400);
+      }
+      const cleanInput = order_id.toString().trim().toUpperCase();
+      let ordersList = state.orders;
+      if (isSupabaseConfigured(env)) {
+        ordersList = (await fetchOrdersFromSupabase(env)) || state.orders;
+      }
+
+      const match = ordersList.find((o: any) => {
+        const idUpper = (o.id || '').toUpperCase();
+        const trkUpper = (o.tracking_number || '').toUpperCase();
+        const txUpper = (o.transaction_id || o.transaction_ref || '').toUpperCase();
+        return idUpper === cleanInput ||
+          idUpper === `ATL-${cleanInput}` ||
+          idUpper === `ATAL-${cleanInput}` ||
+          trkUpper === cleanInput ||
+          txUpper === cleanInput;
+      });
+
+      if (!match) {
+        return jsonResponse({ error: `No active order found with identifier "${cleanInput}". Please check your order confirmation.` }, 404);
+      }
+
+      if (phone && phone.toString().trim()) {
+        const inputDigits = phone.toString().replace(/\D/g, '').slice(-7);
+        const orderDigits = (match.phone || '').toString().replace(/\D/g, '').slice(-7);
+        if (inputDigits && orderDigits && inputDigits !== orderDigits) {
+          return jsonResponse({ error: 'The phone number provided does not match this order.' }, 403);
+        }
+      }
+
+      return jsonResponse(match);
+    } catch {
+      return jsonResponse({ error: 'Error processing tracking request' }, 500);
     }
   }
 
