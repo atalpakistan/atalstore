@@ -669,16 +669,22 @@ function normalizeOrder(order: any) {
     for (const item of order.items) {
       item.price = Number(item.price || 0);
       item.quantity = Math.max(1, Number(item.quantity || 1));
-      item.total = Number(item.total) || (item.price * item.quantity);
+      
+      // Force recalculation of line total
+      item.total = item.price * item.quantity;
       computedSubtotal += item.total;
+      
+      console.log(`🔍 [Normalize Order Item] Order: ${order.id} | Product: ${item.product_name} | Price: ${item.price} | Qty: ${item.quantity} | Computed Total: ${item.total}`);
     }
   }
 
   const existingSubtotal = Number(order.subtotal);
-  order.subtotal = !isNaN(existingSubtotal) && existingSubtotal > 0 ? existingSubtotal : computedSubtotal;
+  order.subtotal = computedSubtotal; // Force use of computed subtotal
   order.discount = Number(order.discount || 0);
   order.shipping_fee = Number(order.shipping_fee !== undefined && order.shipping_fee !== null ? order.shipping_fee : 290);
-  order.total_amount = Number(order.total_amount) || Math.max(0, order.subtotal - order.discount + order.shipping_fee);
+  order.total_amount = Math.max(0, order.subtotal - order.discount + order.shipping_fee);
+
+  console.log(`🧾 [Normalize Order Summary] Order: ${order.id} | Subtotal: ${order.subtotal} | Discount: ${order.discount} | Shipping: ${order.shipping_fee} | Total: ${order.total_amount}`);
 
   return order;
 }
