@@ -739,24 +739,70 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const filteredProducts = products.filter((p) =>
-    p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-    p.brand.toLowerCase().includes(productSearch.toLowerCase()) ||
-    p.sku.toLowerCase().includes(productSearch.toLowerCase())
-  );
+  const formatPrice = (val?: number | string | null): string => {
+    const num = Number(val);
+    if (isNaN(num)) return '0';
+    return num.toLocaleString('en-PK');
+  };
+
+  const formatDate = (dateStr?: string | null): string => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      return d.toLocaleDateString('en-PK', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  const formatDateTime = (dateStr?: string | null): string => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return String(dateStr);
+      return d.toLocaleString('en-PK');
+    } catch {
+      return String(dateStr);
+    }
+  };
+
+  const filteredProducts = products.filter((p) => {
+    if (!p) return false;
+    const q = productSearch.toLowerCase().trim();
+    if (!q) return true;
+    const nameStr = String(p.name || '').toLowerCase();
+    const brandStr = String(p.brand || '').toLowerCase();
+    const skuStr = String(p.sku || '').toLowerCase();
+    const catStr = String(p.category_name || '').toLowerCase();
+    return nameStr.includes(q) || brandStr.includes(q) || skuStr.includes(q) || catStr.includes(q);
+  });
 
   const filteredOrders = orders.filter((o) => {
+    if (!o) return false;
     const q = orderSearch.toLowerCase().trim();
     if (!q) return true;
+    const idStr = String(o.id || '').toLowerCase();
+    const txIdStr = String(o.transaction_id || o.transaction_ref || '').toLowerCase();
+    const custStr = String(o.customer_name || '').toLowerCase();
+    const phoneStr = String(o.phone || '').toLowerCase();
+    const trackStr = String(o.tracking_number || '').toLowerCase();
+    const statusStr = String(o.order_status || '').toLowerCase();
+    const methodStr = String(o.payment_method || '').toLowerCase();
+    const cityStr = String(o.city || '').toLowerCase();
     return (
-      o.id.toLowerCase().includes(q) ||
-      (o.transaction_id && o.transaction_id.toLowerCase().includes(q)) ||
-      (o.transaction_ref && o.transaction_ref.toLowerCase().includes(q)) ||
-      o.customer_name.toLowerCase().includes(q) ||
-      o.phone.includes(q) ||
-      (o.tracking_number && o.tracking_number.toLowerCase().includes(q)) ||
-      o.order_status.toLowerCase().includes(q) ||
-      o.payment_method.toLowerCase().includes(q)
+      idStr.includes(q) ||
+      txIdStr.includes(q) ||
+      custStr.includes(q) ||
+      phoneStr.includes(q) ||
+      trackStr.includes(q) ||
+      statusStr.includes(q) ||
+      methodStr.includes(q) ||
+      cityStr.includes(q)
     );
   });
 
@@ -1045,15 +1091,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700">
                       {metrics?.recentOrders?.map((o: any) => (
-                        <tr key={o.id} className="hover:bg-slate-50/80 transition">
-                          <td className="py-3 px-4 font-mono font-bold text-[#093824]">{o.id}</td>
-                          <td className="py-3 px-4 font-medium text-slate-900">{o.customer_name}</td>
-                          <td className="py-3 px-4">{o.city}</td>
-                          <td className="py-3 px-4 uppercase">{o.payment_method}</td>
-                          <td className="py-3 px-4 font-bold tabular-nums">Rs. {o.total_amount.toLocaleString('en-PK')}</td>
+                        <tr key={o.id || Math.random()} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3 px-4 font-mono font-bold text-[#093824]">{o.id || 'N/A'}</td>
+                          <td className="py-3 px-4 font-medium text-slate-900">{o.customer_name || 'Customer'}</td>
+                          <td className="py-3 px-4">{o.city || 'Pakistan'}</td>
+                          <td className="py-3 px-4 uppercase">{o.payment_method || 'COD'}</td>
+                          <td className="py-3 px-4 font-bold tabular-nums">Rs. {formatPrice(o.total_amount)}</td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-0.5 rounded font-semibold text-[10px] bg-emerald-100 text-emerald-800">
-                              {o.order_status}
+                              {o.order_status || 'Pending'}
                             </span>
                           </td>
                         </tr>
@@ -1152,7 +1198,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </td>
                           <td className="py-3 px-4 font-medium text-slate-800">{p.category_name}</td>
                           <td className="py-3 px-4 font-bold text-[#093824] tabular-nums">
-                            Rs. {p.sale_price.toLocaleString('en-PK')}
+                            Rs. {formatPrice(p.sale_price)}
                           </td>
                           <td className="py-3 px-4 tabular-nums">
                             <span className={`px-2 py-0.5 rounded font-bold text-[11px] ${
@@ -1693,22 +1739,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <tr key={o.id} className="hover:bg-slate-50/80 transition">
                               <td className="py-3 px-4">
                                 <span className="font-mono font-bold text-[#093824] block text-xs sm:text-sm">
-                                  {o.id}
+                                  {o.id || 'N/A'}
                                 </span>
                                 <span className="text-[11px] text-slate-400 block mt-0.5">
-                                  {new Date(o.created_at).toLocaleDateString('en-PK', {
-                                    day: 'numeric',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  })}
+                                  {formatDate(o.created_at)}
                                 </span>
                               </td>
 
                               <td className="py-3 px-4">
-                                <p className="font-semibold text-slate-900">{o.customer_name}</p>
-                                <p className="text-[11px] text-slate-500 font-mono">{o.phone}</p>
+                                <p className="font-semibold text-slate-900">{o.customer_name || 'Guest'}</p>
+                                <p className="text-[11px] text-slate-500 font-mono">{o.phone || 'N/A'}</p>
                                 <p className="text-[11px] text-slate-400 truncate max-w-[180px]">
-                                  {o.city}, {o.province}
+                                  {o.city || 'Pakistan'}{o.province ? `, ${o.province}` : ''}
                                 </p>
                               </td>
 
@@ -1726,7 +1768,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           : 'bg-amber-100 text-amber-800 border border-amber-200'
                                       }`}
                                     >
-                                      {o.payment_method}
+                                      {o.payment_method || 'COD'}
                                     </span>
                                   </div>
 
@@ -1766,7 +1808,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         : 'bg-amber-100 text-amber-800'
                                     }`}
                                   >
-                                    {o.payment_status}
+                                    {o.payment_status || 'pending'}
                                   </span>
                                   {o.payment_status !== 'paid' && (
                                     <button
@@ -1781,7 +1823,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </td>
 
                               <td className="py-3 px-4 font-bold text-slate-900 tabular-nums">
-                                Rs. {o.total_amount.toLocaleString('en-PK')}
+                                Rs. {formatPrice(o.total_amount)}
                               </td>
 
                               <td className="py-3 px-4">
@@ -1848,7 +1890,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </span>
                         </div>
                         <span className="text-xs text-slate-400 block mt-0.5">
-                          Placed on {new Date(selectedOrder.created_at).toLocaleString('en-PK')}
+                          Placed on {formatDateTime(selectedOrder.created_at)}
                         </span>
                       </div>
                       <button
@@ -1869,7 +1911,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <span>Payment & Transaction Verification</span>
                           </h4>
                           <span className="text-[11px] font-semibold text-slate-500">
-                            Gateway: <strong className="uppercase text-slate-800">{selectedOrder.payment_method}</strong>
+                            Gateway: <strong className="uppercase text-slate-800">{selectedOrder.payment_method || 'COD'}</strong>
                           </span>
                         </div>
 
@@ -2017,16 +2059,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                           Delivery Destination
                         </span>
-                        <p className="font-bold text-slate-900 text-sm">{selectedOrder.customer_name}</p>
-                        <p className="text-slate-600 font-mono">Mobile: {selectedOrder.phone}</p>
+                        <p className="font-bold text-slate-900 text-sm">{selectedOrder.customer_name || 'Guest Customer'}</p>
+                        <p className="text-slate-600 font-mono">Mobile: {selectedOrder.phone || 'N/A'}</p>
                         {selectedOrder.customer_email && (
                           <p className="text-slate-600">Email: {selectedOrder.customer_email}</p>
                         )}
                         <p className="text-slate-700">
-                          {selectedOrder.street_address}, {selectedOrder.area}
+                          {selectedOrder.street_address || 'N/A'}, {selectedOrder.area || ''}
                         </p>
                         <p className="text-slate-700">
-                          {selectedOrder.city}, {selectedOrder.province}, Pakistan
+                          {selectedOrder.city || 'Pakistan'}{selectedOrder.province ? `, ${selectedOrder.province}` : ''}, Pakistan
                         </p>
                         {selectedOrder.landmark && (
                           <p className="text-slate-500 italic">Landmark: {selectedOrder.landmark}</p>
@@ -2046,7 +2088,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </span>
                           <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto no-scrollbar pr-1">
                             {selectedOrder.items.map((it) => (
-                              <div key={it.id} className="py-2 flex items-center justify-between text-xs">
+                              <div key={it.id || Math.random()} className="py-2 flex items-center justify-between text-xs">
                                 <div className="flex items-center gap-2.5 min-w-0">
                                   <img
                                     src={it.image_url || '/icon.svg'}
@@ -2061,7 +2103,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   </div>
                                 </div>
                                 <span className="font-bold text-slate-900 tabular-nums shrink-0">
-                                  Rs. {it.total.toLocaleString('en-PK')}
+                                  Rs. {formatPrice(it.total)}
                                 </span>
                               </div>
                             ))}
@@ -2073,24 +2115,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs">
                         <div className="flex justify-between text-slate-600">
                           <span>Subtotal</span>
-                          <span className="tabular-nums">Rs. {selectedOrder.subtotal.toLocaleString('en-PK')}</span>
+                          <span className="tabular-nums">Rs. {formatPrice(selectedOrder.subtotal)}</span>
                         </div>
-                        {selectedOrder.discount > 0 && (
+                        {(selectedOrder.discount || 0) > 0 && (
                           <div className="flex justify-between text-emerald-700">
                             <span>Discount</span>
-                            <span className="tabular-nums">- Rs. {selectedOrder.discount.toLocaleString('en-PK')}</span>
+                            <span className="tabular-nums">- Rs. {formatPrice(selectedOrder.discount)}</span>
                           </div>
                         )}
                         <div className="flex justify-between text-slate-600">
                           <span>Delivery Charges</span>
                           <span className="tabular-nums">
-                            {selectedOrder.shipping_fee === 0 ? 'FREE' : `Rs. ${selectedOrder.shipping_fee}`}
+                            {selectedOrder.shipping_fee === 0 ? 'FREE' : `Rs. ${formatPrice(selectedOrder.shipping_fee)}`}
                           </span>
                         </div>
                         <div className="flex justify-between font-bold text-slate-900 text-sm pt-1 border-t border-slate-200">
                           <span>Total Amount</span>
                           <span className="tabular-nums text-[#093824]">
-                            Rs. {selectedOrder.total_amount.toLocaleString('en-PK')}
+                            Rs. {formatPrice(selectedOrder.total_amount)}
                           </span>
                         </div>
                       </div>
