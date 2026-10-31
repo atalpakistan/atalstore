@@ -336,6 +336,14 @@ router.get('/products/:slug', (req, res) => {
     }
 
     product.images = safeJsonParse(product.images, []);
+    if (!Array.isArray(product.images) || product.images.length === 0) {
+      product.images = ['/icon.svg'];
+    }
+    product.rating = typeof product.rating === 'number' && !isNaN(product.rating) ? product.rating : 5.0;
+    product.reviews_count = typeof product.reviews_count === 'number' && !isNaN(product.reviews_count) ? product.reviews_count : 0;
+    product.sale_price = typeof product.sale_price === 'number' && !isNaN(product.sale_price) ? product.sale_price : 0;
+    product.original_price = typeof product.original_price === 'number' && !isNaN(product.original_price) ? product.original_price : product.sale_price;
+
     product.variants = db.prepare('SELECT * FROM product_variants WHERE product_id = ?').all(product.id);
 
     // Fetch related products in the same category
@@ -347,6 +355,10 @@ router.get('/products/:slug', (req, res) => {
       LIMIT 4
     `).all(product.category_id, product.id) as any[]).map(r => {
       r.images = safeJsonParse(r.images, []);
+      if (!Array.isArray(r.images) || r.images.length === 0) r.images = ['/icon.svg'];
+      r.rating = typeof r.rating === 'number' && !isNaN(r.rating) ? r.rating : 5.0;
+      r.reviews_count = typeof r.reviews_count === 'number' && !isNaN(r.reviews_count) ? r.reviews_count : 0;
+      r.sale_price = typeof r.sale_price === 'number' && !isNaN(r.sale_price) ? r.sale_price : 0;
       return r;
     });
 

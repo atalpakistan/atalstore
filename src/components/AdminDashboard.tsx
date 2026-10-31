@@ -982,6 +982,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       purchase_price: 1800,
                       available_stock: 25,
                       low_stock_threshold: 5,
+                      rating: 5.0,
+                      reviews_count: 0,
                       new_launch: 1,
                       spotlight: 0,
                       festive_deal: 0,

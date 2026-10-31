@@ -208,11 +208,29 @@ export const onRequest = async ({ request, params }: { request: Request; params:
   // Single Product
   if (endpoint.startsWith('products/') && request.method === 'GET') {
     const slugOrId = endpoint.replace(/^products\//, '');
-    const product = state.products.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
-    if (!product) {
+    const rawProduct = state.products.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
+    if (!rawProduct) {
       return jsonResponse({ error: 'Product not found' }, 404);
     }
-    return jsonResponse({ product, related: state.products.filter((p: any) => p.id !== product.id).slice(0, 4) });
+    const product = {
+      ...rawProduct,
+      rating: typeof rawProduct.rating === 'number' && !isNaN(rawProduct.rating) ? rawProduct.rating : 5.0,
+      reviews_count: typeof rawProduct.reviews_count === 'number' && !isNaN(rawProduct.reviews_count) ? rawProduct.reviews_count : 0,
+      sale_price: typeof rawProduct.sale_price === 'number' && !isNaN(rawProduct.sale_price) ? rawProduct.sale_price : 0,
+      original_price: typeof rawProduct.original_price === 'number' && !isNaN(rawProduct.original_price) ? rawProduct.original_price : (rawProduct.sale_price || 0),
+      available_stock: typeof rawProduct.available_stock === 'number' ? rawProduct.available_stock : 10,
+      images: Array.isArray(rawProduct.images) && rawProduct.images.length > 0 ? rawProduct.images : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80']
+    };
+    const related = state.products
+      .filter((p: any) => p.id !== product.id)
+      .slice(0, 4)
+      .map((rp: any) => ({
+        ...rp,
+        rating: typeof rp.rating === 'number' && !isNaN(rp.rating) ? rp.rating : 5.0,
+        reviews_count: typeof rp.reviews_count === 'number' && !isNaN(rp.reviews_count) ? rp.reviews_count : 0,
+        sale_price: typeof rp.sale_price === 'number' && !isNaN(rp.sale_price) ? rp.sale_price : 0,
+      }));
+    return jsonResponse({ product, related });
   }
 
   // Place Order
@@ -288,8 +306,28 @@ export const onRequest = async ({ request, params }: { request: Request; params:
       if (request.method === 'POST') {
         const body = await request.json().catch(() => ({}));
         const id = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const slug = (body.slug || body.name || 'product').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        const newProduct = { ...body, id, slug, created_at: new Date().toISOString() };
+        const rawSlug = (body.slug || body.name || 'product').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const slug = rawSlug || `product-${Date.now()}`;
+        const newProduct = {
+          brand: 'ATAL',
+          short_description: '',
+          description: '',
+          variants: [],
+          ...body,
+          id,
+          slug,
+          rating: typeof body.rating === 'number' && !isNaN(body.rating) ? body.rating : 5.0,
+          reviews_count: typeof body.reviews_count === 'number' && !isNaN(body.reviews_count) ? body.reviews_count : 0,
+          purchase_price: Number(body.purchase_price || 0),
+          sale_price: Number(body.sale_price || 0),
+          original_price: Number(body.original_price || body.sale_price || 0),
+          available_stock: Number(body.available_stock || 10),
+          low_stock_threshold: Number(body.low_stock_threshold || 5),
+          images: Array.isArray(body.images) && body.images.filter(Boolean).length > 0
+            ? body.images.filter(Boolean)
+            : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80'],
+          created_at: new Date().toISOString()
+        };
         state.products.unshift(newProduct);
         return jsonResponse({ success: true, id, slug });
       }

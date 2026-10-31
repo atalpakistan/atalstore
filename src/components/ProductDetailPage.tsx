@@ -99,16 +99,35 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
     );
   }
 
-  const images = Array.isArray(product.images) && product.images.length > 0 ? product.images : ['/icon.svg'];
+  const rawImages = Array.isArray(product.images)
+    ? product.images
+    : typeof product.images === 'string'
+      ? (() => {
+          try {
+            const parsed = JSON.parse(product.images);
+            return Array.isArray(parsed) ? parsed : [product.images];
+          } catch {
+            return [product.images];
+          }
+        })()
+      : [];
+  const images = rawImages.filter((img) => typeof img === 'string' && img.trim().length > 0);
+  if (images.length === 0) images.push('/icon.svg');
+
   const inWish = isInWishlist(product.id);
 
-  // Active pricing based on variant
-  const currentPrice = selectedVariant?.price || product.sale_price;
-  const originalPrice = product.original_price;
-  const hasDiscount = originalPrice > currentPrice;
-  const discountPercent = hasDiscount ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) : 0;
+  // Safe numeric fallbacks
+  const rating = typeof product.rating === 'number' && !isNaN(product.rating) ? product.rating : 5.0;
+  const reviewsCount = typeof product.reviews_count === 'number' && !isNaN(product.reviews_count) ? product.reviews_count : 0;
+  const salePrice = typeof product.sale_price === 'number' && !isNaN(product.sale_price) ? product.sale_price : 0;
+  const originalPrice = typeof product.original_price === 'number' && !isNaN(product.original_price) ? product.original_price : salePrice;
 
-  const activeStock = selectedVariant ? selectedVariant.stock : product.available_stock;
+  // Active pricing based on variant
+  const currentPrice = selectedVariant?.price ?? salePrice;
+  const hasDiscount = originalPrice > currentPrice;
+  const discountPercent = hasDiscount && originalPrice > 0 ? Math.round(((originalPrice - currentPrice) / originalPrice) * 100) : 0;
+
+  const activeStock = selectedVariant ? selectedVariant.stock : (product.available_stock ?? 10);
   const isOutOfStock = activeStock <= 0;
 
   const handleColorSelect = (v: ProductVariant) => {
@@ -193,7 +212,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           {/* Main Large Image Display */}
           <div className="flex-1 relative aspect-[4/5] sm:aspect-square rounded-3xl overflow-hidden bg-slate-100 border border-slate-200/90 shadow-md">
             <img
-              src={selectedVariant?.image_url && selectedImageIndex === 0 ? selectedVariant.image_url : images[selectedImageIndex]}
+              src={selectedVariant?.image_url && selectedImageIndex === 0 ? selectedVariant.image_url : images[selectedImageIndex] || images[0]}
               alt={product.name}
               className="w-full h-full object-cover object-center"
             />
@@ -227,7 +246,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           <div>
             <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
               <span className="font-bold tracking-wider uppercase text-emerald-800">
-                {product.brand}
+                {product.brand || 'ATAL'}
               </span>
               <span className="font-mono text-slate-400">
                 SKU: {selectedVariant?.sku || product.sku}
@@ -245,16 +264,16 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   <Star
                     key={i}
                     className={`w-4 h-4 ${
-                      i < Math.floor(product.rating)
+                      i < Math.floor(rating)
                         ? 'fill-amber-400 text-amber-400'
                         : 'text-slate-300'
                     }`}
                   />
                 ))}
-                <span className="font-bold text-slate-800 ml-1 tabular-nums">{product.rating.toFixed(1)}</span>
+                <span className="font-bold text-slate-800 ml-1 tabular-nums">{rating.toFixed(1)}</span>
               </div>
               <span className="text-slate-400">·</span>
-              <span className="text-slate-600 font-medium">({product.reviews_count} verified customer reviews)</span>
+              <span className="text-slate-600 font-medium">({reviewsCount} verified customer reviews)</span>
             </div>
           </div>
 
@@ -457,7 +476,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   <span className="text-[10px] font-bold uppercase text-emerald-800">{rel.brand}</span>
                   <h4 className="text-xs font-medium text-slate-900 line-clamp-1">{rel.name}</h4>
                   <p className="text-xs font-bold text-[#093824] tabular-nums mt-1">
-                    Rs. {rel.sale_price.toLocaleString('en-PK')}
+                    Rs. {(rel.sale_price || 0).toLocaleString('en-PK')}
                   </p>
                 </div>
               </div>
