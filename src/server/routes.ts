@@ -636,9 +636,27 @@ router.post('/orders', (req, res) => {
 // Order Lookup / Confirmation Detail
 router.get('/orders/:id', (req, res) => {
   try {
-    const rawId = req.params.id?.trim();
-    const order = db.prepare('SELECT * FROM orders WHERE UPPER(TRIM(id)) = UPPER(?)').get(rawId) as any;
-    if (!order) return res.status(404).json({ error: 'Order not found' });
+    const rawId = (req.params.id || '').trim().replace(/^#/, '');
+    const cleanDigits = rawId.replace(/\D/g, '');
+
+    let order = db.prepare(`
+      SELECT * FROM orders 
+      WHERE UPPER(TRIM(id)) = UPPER(?) 
+         OR UPPER(TRIM(id)) = UPPER(?)
+         OR (LENGTH(?) > 0 AND UPPER(TRIM(id)) = UPPER(?))
+         OR UPPER(TRIM(tracking_number)) = UPPER(?)
+         OR UPPER(TRIM(transaction_id)) = UPPER(?)
+      LIMIT 1
+    `).get(
+      rawId,
+      `ATL-${rawId}`,
+      cleanDigits,
+      cleanDigits,
+      rawId,
+      rawId
+    ) as any;
+
+    if (!order) return res.status(404).json({ error: `Order #${rawId} was not found in our database.` });
 
     order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
     res.json(order);
