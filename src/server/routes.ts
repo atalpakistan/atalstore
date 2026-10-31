@@ -527,16 +527,26 @@ router.post('/orders', (req, res) => {
         // Deduct product stock
         db.prepare("UPDATE products SET available_stock = available_stock - ?, updated_at = datetime('now') WHERE id = ?").run(item.quantity, prod.id);
 
-        const lineTotal = unitPrice * item.quantity;
+        const parsedUnitPrice = Number(unitPrice);
+        const parsedQuantity = Number(item.quantity) || 1;
+
+        if (isNaN(parsedUnitPrice) || parsedUnitPrice <= 0) {
+          console.error(`🚨 [Order Error] Invalid or zero unit price for product ${prod.name} (ID: ${prod.id}):`, unitPrice);
+          throw new Error(`Product "${prod.name}" has an invalid price (Rs. ${unitPrice}). Cannot process order.`);
+        }
+
+        const lineTotal = parsedUnitPrice * parsedQuantity;
         subtotal += lineTotal;
+
+        console.log(`📦 [Order Item Pricing Audit] Product: "${prod.name}" | Unit Price: Rs. ${parsedUnitPrice} | Qty: ${parsedQuantity} | Line Total: Rs. ${lineTotal}`);
 
         orderItemsToInsert.push({
           id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           product_id: prod.id,
           product_name: prod.name,
           variant_title: variantTitle,
-          price: unitPrice,
-          quantity: item.quantity,
+          price: parsedUnitPrice,
+          quantity: parsedQuantity,
           image_url: itemImg,
           total: lineTotal
         });
