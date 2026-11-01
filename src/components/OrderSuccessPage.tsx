@@ -22,12 +22,30 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
+  // Load cached order instantly from sessionStorage if available
+  useEffect(() => {
+    if (!orderId) return;
+    try {
+      const cachedStr = sessionStorage.getItem(`atal_order_${orderId}`);
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (cached && (cached.id || cached.orderId)) {
+          setOrder(cached);
+          if (Array.isArray(cached.items) && cached.items.length > 0) {
+            setLoading(false);
+          }
+        }
+      }
+    } catch {
+      // Ignored
+    }
+  }, [orderId]);
+
   const loadOrder = async () => {
     if (!orderId) {
       setLoading(false);
       return;
     }
-    setLoading(true);
     setFetchError('');
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`);

@@ -150,15 +150,24 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
           coupon_code: appliedCoupon?.code || null,
           items: items.map((it) => {
             const qty = Number(it.quantity) || 1;
-            const price = Number(it.unit_price || it.total_price / qty || it.product?.sale_price || 0);
+            const price = Number(it.unit_price || (it.total_price ? it.total_price / qty : 0) || it.product?.sale_price || 0);
+            const pid = it.product_id || it.product?.id;
+            const vid = it.variant_id || it.variant?.id;
+            const img = it.variant?.image_url || it.product?.images?.[0] || '/icon.svg';
+            const pname = it.product?.name || 'Product';
+            const vtitle = it.variant ? `${it.variant.color_name || ''} ${it.variant.size || ''}`.trim() : undefined;
+
             if (price <= 0) {
-              console.warn(`⚠️ [Checkout Warning] Item ${it.product?.name} has zero or invalid unit price:`, it);
+              console.warn(`⚠️ [Checkout Warning] Item ${pname} has zero or invalid unit price:`, it);
             }
             return {
-              product_id: it.product_id,
-              variant_id: it.variant_id,
+              product_id: pid,
+              product_name: pname,
+              variant_id: vid,
+              variant_title: vtitle,
               quantity: qty,
               unit_price: price,
+              image_url: img,
             };
           }),
         }),
@@ -176,6 +185,16 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
         setSubmitError('Failed to retrieve order reference number. Please check your SMS or contact support.');
         setIsSubmitting(false);
         return;
+      }
+
+      // Cache placed order payload locally for instantaneous, zero-delay rendering on confirmation page
+      try {
+        const orderData = data.order || data;
+        if (orderData) {
+          sessionStorage.setItem(`atal_order_${orderId}`, JSON.stringify(orderData));
+        }
+      } catch {
+        // Ignored
       }
 
       // 2. If Cash on Delivery, complete immediately

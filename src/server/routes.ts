@@ -497,26 +497,57 @@ router.post('/orders', (req, res) => {
       }> = [];
 
       for (const item of items) {
-        // Force server-side lookup from canonical 'products' and 'product_variants' tables
-        const prod = db.prepare('SELECT id, name, sale_price, available_stock, images FROM products WHERE id = ?').get(item.product_id) as any;
+        const targetPid = item.product_id || item.id;
+        // Lookup product by ID or slug
+        let prod = db.prepare('SELECT id, name, sale_price, available_stock, images FROM products WHERE id = ? OR slug = ?').get(targetPid, targetPid) as any;
+        if (!prod && item.product_name) {
+          prod = db.prepare('SELECT id, name, sale_price, available_stock, images FROM products WHERE name = ?').get(item.product_name) as any;
+        }
+
         if (!prod) {
-          throw new Error(`Product ${item.product_id} no longer exists in database.`);
+          console.warn(`⚠️ [Product Lookup Warning] Product "${targetPid}" not found by ID. Using client fallback name.`);
+          prod = {
+            id: targetPid || `prod_${Date.now()}`,
+            name: item.product_name || item.name || 'Product',
+            sale_price: Number(item.unit_price || item.price || 0),
+            available_stock: 99,
+            images: item.image_url || item.image ? JSON.stringify([item.image_url || item.image]) : '[]'
+          };
         }
 
         console.log(`🔍 [Database Price Fetch] Product ID: ${prod.id} (${prod.name}) | DB sale_price: ${prod.sale_price} | Variant ID: ${item.variant_id || 'None'}`);
 
         let canonicalUnitPrice = Number(prod.sale_price);
-        let variantTitle: string | null = null;
-        let itemImg: string = safeJsonParse<string[]>(prod.images, [])[0] || '/icon.svg';
+        let variantTitle: string | null = item.variant_title || item.variant_name || null;
+        
+        // Product image extraction
+        let itemImg = '/icon.svg';
+        if (item.image_url) {
+          itemImg = item.image_url;
+        } else if (item.image) {
+          itemImg = item.image;
+        } else if (prod.images) {
+          if (typeof prod.images === 'string') {
+            try {
+              const parsed = JSON.parse(prod.images);
+              if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]) itemImg = parsed[0];
+              else if (prod.images.startsWith('http') || prod.images.startsWith('/')) itemImg = prod.images;
+            } catch {
+              if (prod.images.startsWith('http') || prod.images.startsWith('/')) itemImg = prod.images;
+            }
+          } else if (Array.isArray(prod.images) && prod.images.length > 0) {
+            itemImg = prod.images[0];
+          }
+        }
 
         if (item.variant_id) {
-          const variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?').get(item.variant_id, item.product_id) as any;
+          const variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?').get(item.variant_id, prod.id) as any;
           if (variant) {
             console.log(`🔍 [Database Variant Price Fetch] Variant ID: ${variant.id} | DB variant price: ${variant.price}`);
             if (variant.price !== undefined && variant.price !== null && Number(variant.price) > 0) {
               canonicalUnitPrice = Number(variant.price);
             }
-            variantTitle = `${variant.color_name || ''} ${variant.size || ''}`.trim() || null;
+            variantTitle = `${variant.color_name || ''} ${variant.size || ''}`.trim() || variantTitle;
             if (variant.image_url) itemImg = variant.image_url;
             if (variant.stock < item.quantity) {
               throw new Error(`Insufficient stock for ${prod.name} (${variantTitle}). Only ${variant.stock} left.`);
@@ -538,7 +569,9 @@ router.post('/orders', (req, res) => {
         }
 
         // Deduct product stock
-        db.prepare("UPDATE products SET available_stock = available_stock - ?, updated_at = datetime('now') WHERE id = ?").run(item.quantity, prod.id);
+        if (prod.id) {
+          db.prepare("UPDATE products SET available_stock = available_stock - ?, updated_at = datetime('now') WHERE id = ?").run(item.quantity, prod.id);
+        }
 
         const parsedUnitPrice = canonicalUnitPrice;
         const parsedQuantity = Number(item.quantity) || 1;
@@ -636,12 +669,23 @@ router.post('/orders', (req, res) => {
         orderId,
         id: orderId,
         order_id: orderId,
+        customer_name,
+        customer_email,
+        phone: cleanPhone,
+        province,
+        city,
+        area,
+        street_address,
+        landmark,
         subtotal,
         discount,
         shipping_fee,
         total_amount,
         payment_method,
-        transaction_id: cleanTxId
+        payment_status: initialPaymentStatus,
+        order_status: initialOrderStatus,
+        transaction_id: cleanTxId,
+        items: orderItemsToInsert
       };
     });
 
@@ -660,8 +704,18 @@ router.post('/orders', (req, res) => {
 function normalizeOrder(order: any) {
   if (!order) return order;
 
-  if (!order.items) {
-    order.items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
+  if (!order.items || !Array.isArray(order.items) || order.items.length === 0) {
+    const rawId = String(order.id || '').trim();
+    order.items = db.prepare(`
+      SELECT * FROM order_items 
+      WHERE UPPER(TRIM(order_id)) = UPPER(?) 
+         OR UPPER(TRIM(order_id)) = UPPER(?)
+         OR UPPER(TRIM(order_id)) = UPPER(?)
+    `).all(
+      rawId,
+      `ATL-${rawId}`,
+      rawId.replace(/^ATL-/i, '')
+    ) as any[];
   }
 
   let computedSubtotal = 0;
@@ -670,6 +724,20 @@ function normalizeOrder(order: any) {
       item.price = Number(item.price || 0);
       item.quantity = Math.max(1, Number(item.quantity || 1));
       
+      // If image_url is missing or placeholder, look up from product table
+      if ((!item.image_url || item.image_url === '/icon.svg') && item.product_id) {
+        const prod = db.prepare('SELECT images FROM products WHERE id = ?').get(item.product_id) as any;
+        if (prod && prod.images) {
+          try {
+            const parsed = JSON.parse(prod.images);
+            if (Array.isArray(parsed) && parsed.length > 0) item.image_url = parsed[0];
+            else if (typeof prod.images === 'string' && (prod.images.startsWith('http') || prod.images.startsWith('/'))) item.image_url = prod.images;
+          } catch {
+            if (typeof prod.images === 'string' && (prod.images.startsWith('http') || prod.images.startsWith('/'))) item.image_url = prod.images;
+          }
+        }
+      }
+
       // Force recalculation of line total
       item.total = item.price * item.quantity;
       computedSubtotal += item.total;
@@ -679,7 +747,7 @@ function normalizeOrder(order: any) {
   }
 
   const existingSubtotal = Number(order.subtotal);
-  order.subtotal = computedSubtotal; // Force use of computed subtotal
+  order.subtotal = computedSubtotal > 0 ? computedSubtotal : existingSubtotal;
   order.discount = Number(order.discount || 0);
   order.shipping_fee = Number(order.shipping_fee !== undefined && order.shipping_fee !== null ? order.shipping_fee : 290);
   order.total_amount = Math.max(0, order.subtotal - order.discount + order.shipping_fee);
