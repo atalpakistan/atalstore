@@ -36,9 +36,9 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
 
   const activeCategoryObj = categories.find((c) => c.slug === selectedCategory);
 
-  const fetchCatalog = async (resetPage = false) => {
+  const fetchCatalog = async (pageToFetch?: number) => {
     setLoading(true);
-    const targetPage = resetPage ? 1 : page;
+    const targetPage = typeof pageToFetch === 'number' ? pageToFetch : page;
     try {
       const params = new URLSearchParams();
       if (searchTerm.trim()) params.set('search', searchTerm.trim());
@@ -55,7 +55,7 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
         setProducts(data.products || []);
         setTotalPages(data.pagination?.totalPages || 1);
         setTotalCount(data.pagination?.total || 0);
-        if (resetPage) setPage(1);
+        setPage(targetPage);
       }
     } catch {
       // Graceful error fallback
@@ -65,12 +65,12 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
   };
 
   useEffect(() => {
-    fetchCatalog(true);
+    fetchCatalog(1);
   }, [selectedCategory, selectedSubcategory, priceSort, maxPriceFilter]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    fetchCatalog(true);
+    fetchCatalog(1);
   };
 
   const handleClearFilters = () => {
@@ -240,8 +240,11 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
           <button
             disabled={page <= 1}
             onClick={() => {
-              setPage((p) => p - 1);
-              fetchCatalog();
+              if (page > 1) {
+                const newPage = page - 1;
+                fetchCatalog(newPage);
+                document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+              }
             }}
             className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition"
           >
@@ -255,8 +258,11 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
           <button
             disabled={page >= totalPages}
             onClick={() => {
-              setPage((p) => p + 1);
-              fetchCatalog();
+              if (page < totalPages) {
+                const newPage = page + 1;
+                fetchCatalog(newPage);
+                document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
+              }
             }}
             className="px-4 py-2 bg-white border border-slate-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 transition"
           >

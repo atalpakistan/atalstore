@@ -665,26 +665,33 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
             {/* Compact items list */}
             <div className="max-h-60 overflow-y-auto space-y-3 pr-1 no-scrollbar">
-              {items.map((item) => (
-                <div key={item.id} className="flex items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <img
-                      src={item.variant?.image_url || item.product.images?.[0] || '/icon.svg'}
-                      alt={item.product.name}
-                      className="w-10 h-10 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
-                    />
-                    <div className="truncate">
-                      <p className="font-semibold text-slate-800 truncate">{item.product?.name || 'Product'}</p>
-                      <p className="text-slate-500 text-[11px]">
-                        Qty: {item.quantity || 1} {item.variant?.color_name && `· ${item.variant.color_name}`}
-                      </p>
+              {items.map((item) => {
+                const qty = Math.max(1, Number(item.quantity || 1));
+                const unitPrice = Number(item.unit_price || item.product?.sale_price || (item.total_price ? item.total_price / qty : 0));
+                const itemTotal = Number(item.total_price) || (unitPrice * qty);
+
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={item.variant?.image_url || item.product?.images?.[0] || '/icon.svg'}
+                        alt={item.product?.name || 'Product'}
+                        className="w-10 h-10 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                      />
+                      <div className="truncate">
+                        <p className="font-semibold text-slate-800 truncate">{item.product?.name || 'Product'}</p>
+                        <p className="text-slate-500 text-[11px]">
+                          Qty: {qty} {item.variant?.color_name && `· ${item.variant.color_name}`}
+                          {unitPrice > 0 && ` · Rs. ${unitPrice.toLocaleString('en-PK')}`}
+                        </p>
+                      </div>
                     </div>
+                    <span className="font-bold text-slate-900 tabular-nums shrink-0">
+                      Rs. {itemTotal.toLocaleString('en-PK')}
+                    </span>
                   </div>
-                  <span className="font-bold text-slate-900 tabular-nums shrink-0">
-                    Rs. {(item.total_price ?? 0).toLocaleString('en-PK')}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Coupon Code Box */}

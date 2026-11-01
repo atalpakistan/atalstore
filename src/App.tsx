@@ -19,6 +19,7 @@ import { ProductDetailPage } from './components/ProductDetailPage';
 import { CheckoutPage } from './components/CheckoutPage';
 import { OrderSuccessPage } from './components/OrderSuccessPage';
 import { CartDrawer } from './components/CartDrawer';
+import { WishlistDrawer } from './components/WishlistDrawer';
 import { SearchModal } from './components/SearchModal';
 import { OrderTrackingModal } from './components/OrderTrackingModal';
 import { AuthModal } from './components/AuthModal';
@@ -47,6 +48,7 @@ function StorefrontApp() {
   // Modals
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
+  const [isWishlistOpen, setIsWishlistOpen] = useState(false);
 
   // Handle browser back / forward navigation and Android gestures
   useEffect(() => {
@@ -191,6 +193,7 @@ function StorefrontApp() {
       <Header
         settings={homepageData?.settings}
         onOpenSearch={() => setIsSearchOpen(true)}
+        onOpenWishlist={() => setIsWishlistOpen(true)}
         onNavigateHome={() => {
           setSelectedCategorySlug(null);
           setMobileTab('home');
@@ -374,6 +377,13 @@ function StorefrontApp() {
 
       {/* Slide-over Cart Drawer */}
       <CartDrawer onProceedCheckout={() => navigateTo('/checkout')} />
+
+      {/* Slide-over Wishlist Drawer */}
+      <WishlistDrawer
+        isOpen={isWishlistOpen}
+        onClose={() => setIsWishlistOpen(false)}
+        onSelectProduct={(p) => navigateTo(`/product/${p.slug}`)}
+      />
 
       {/* Instant Search Modal */}
       <SearchModal

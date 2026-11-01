@@ -822,20 +822,36 @@ router.post('/orders/track', (req, res) => {
       return res.status(400).json({ error: 'Please enter your Order Number or Courier Consignment Number.' });
     }
 
-    const cleanInputOrder = order_id.toString().trim();
+    const rawInput = order_id.toString().trim();
+    const cleanInputOrder = rawInput.replace(/^[#\s]+/, '').replace(/^order\s*#?\s*/i, '');
+    const cleanDigits = rawInput.replace(/\D/g, '');
+
     // Search by exact ID, stripped prefix (e.g. 582910 matching ATL-582910), or courier tracking number
     let order = db.prepare(`
       SELECT * FROM orders 
       WHERE UPPER(TRIM(id)) = UPPER(?) 
          OR UPPER(TRIM(id)) = UPPER(?)
          OR UPPER(TRIM(id)) = UPPER(?)
+         OR (LENGTH(?) > 0 AND UPPER(TRIM(id)) = UPPER(?))
+         OR UPPER(TRIM(tracking_number)) = UPPER(?)
          OR UPPER(TRIM(tracking_number)) = UPPER(?)
          OR UPPER(TRIM(transaction_id)) = UPPER(?)
+         OR UPPER(TRIM(transaction_id)) = UPPER(?)
       LIMIT 1
-    `).get(cleanInputOrder, `ATL-${cleanInputOrder}`, `ATAL-${cleanInputOrder}`, cleanInputOrder, cleanInputOrder) as any;
+    `).get(
+      rawInput,
+      cleanInputOrder,
+      `ATL-${cleanInputOrder}`,
+      cleanDigits,
+      cleanDigits,
+      rawInput,
+      cleanInputOrder,
+      rawInput,
+      cleanInputOrder
+    ) as any;
 
     if (!order) {
-      return res.status(404).json({ error: `No active order found with identifier "${cleanInputOrder}". Please verify your Order Number or SMS receipt.` });
+      return res.status(404).json({ error: `No active order found with identifier "${rawInput}". Please verify your Order Number or SMS receipt.` });
     }
 
     // If phone number is supplied, perform safe validation on the last 7 digits
@@ -1118,6 +1134,33 @@ router.post('/wishlist/toggle', (req, res) => {
     const id = `wish_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     db.prepare('INSERT INTO wishlist_items (id, customer_id, product_id) VALUES (?, ?, ?)').run(id, user.id, product_id);
     return res.json({ inWishlist: true });
+  }
+});
+
+router.post('/wishlist/products', (req, res) => {
+  try {
+    const { product_ids } = req.body;
+    if (!Array.isArray(product_ids) || product_ids.length === 0) {
+      return res.json({ products: [] });
+    }
+
+    const placeholders = product_ids.map(() => '?').join(',');
+    const sql = `
+      SELECT p.*, c.name as category_name, c.slug as category_slug 
+      FROM products p
+      LEFT JOIN categories c ON p.category_id = c.id
+      WHERE p.id IN (${placeholders})
+    `;
+
+    const products = (db.prepare(sql).all(...product_ids) as any[]).map(p => {
+      p.images = safeJsonParse(p.images, []);
+      p.variants = db.prepare('SELECT * FROM product_variants WHERE product_id = ?').all(p.id);
+      return p;
+    });
+
+    res.json({ products });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

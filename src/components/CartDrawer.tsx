@@ -125,7 +125,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onProceedCheckout }) => 
 
                   <div className="flex items-center justify-between mt-2">
                     <span className="font-bold text-sm text-[#093824] tabular-nums">
-                      Rs. {item.total_price.toLocaleString('en-PK')}
+                      Rs. {(Number(item.total_price) || ((Number(item.unit_price) || Number(item.product?.sale_price) || 0) * (Number(item.quantity) || 1))).toLocaleString('en-PK')}
                     </span>
 
                     {/* Quantity Steppers & Delete */}

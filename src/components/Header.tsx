@@ -13,6 +13,7 @@ interface HeaderProps {
   onNavigateAdmin: () => void;
   onNavigateOrders: () => void;
   onOpenTracking: () => void;
+  onOpenWishlist?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -22,7 +23,8 @@ export const Header: React.FC<HeaderProps> = ({
   onNavigateCategory,
   onNavigateAdmin,
   onNavigateOrders,
-  onOpenTracking
+  onOpenTracking,
+  onOpenWishlist,
 }) => {
   const { itemCount, openCart } = useCart();
   const { count: wishlistCount } = useWishlist();
@@ -120,7 +122,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             {/* Wishlist Icon */}
             <button
-              onClick={onNavigateHome}
+              onClick={onOpenWishlist || onNavigateHome}
               className="relative p-2 text-white/90 hover:text-amber-300 rounded-lg hover:bg-emerald-900/40 transition"
               title="My Wishlist"
               aria-label="Wishlist"
