@@ -1075,12 +1075,40 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                 <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm">
                   <span className="text-xs font-semibold text-slate-500 block mb-1">Total Sales (PKR)</span>
-                  <div className="text-2xl font-bold text-[#093824] tabular-nums">
-                    Rs. {(metrics?.totalSales || 0).toLocaleString('en-PK')}
-                  </div>
-                  <span className="text-[11px] text-emerald-700 font-medium">
-                    Rs. {(metrics?.todaySales || 0).toLocaleString('en-PK')} today
-                  </span>
+                  {(() => {
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const calculatedTotalSales = orders.reduce((sum, o) => {
+                      if (o.order_status === 'Cancelled') return sum;
+                      return sum + extractOrderTotal(o);
+                    }, 0);
+                    const calculatedTodaySales = orders.reduce((sum, o) => {
+                      if (o.order_status === 'Cancelled') return sum;
+                      const oDate = (o.created_at || '').slice(0, 10);
+                      if (oDate === todayStr || !o.created_at) {
+                        return sum + extractOrderTotal(o);
+                      }
+                      return sum;
+                    }, 0);
+
+                    const displayTotalSales = (typeof metrics?.totalSales === 'number' && metrics.totalSales > 0)
+                      ? metrics.totalSales
+                      : calculatedTotalSales;
+
+                    const displayTodaySales = (typeof metrics?.todaySales === 'number' && metrics.todaySales > 0)
+                      ? metrics.todaySales
+                      : calculatedTodaySales;
+
+                    return (
+                      <>
+                        <div className="text-2xl font-bold text-[#093824] tabular-nums">
+                          Rs. {displayTotalSales.toLocaleString('en-PK')}
+                        </div>
+                        <span className="text-[11px] text-emerald-700 font-medium">
+                          Rs. {displayTodaySales.toLocaleString('en-PK')} today
+                        </span>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="bg-white p-5 rounded-2xl border border-slate-200/90 shadow-sm">

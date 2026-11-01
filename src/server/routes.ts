@@ -1132,7 +1132,10 @@ router.get('/admin/metrics', requireAdmin, (req, res) => {
 
     for (const o of allNormalizedOrders) {
       if (o.order_status !== 'Cancelled') {
-        const amt = Number(o.total_amount || 0);
+        let amt = Number(o.total_amount || 0);
+        if (amt <= 0 && Number(o.subtotal) > 0) {
+          amt = Math.max(0, Number(o.subtotal) - Number(o.discount || 0) + Number(o.shipping_fee !== undefined ? o.shipping_fee : 290));
+        }
         totalSales += amt;
 
         const orderDate = (o.created_at || '').slice(0, 10);
