@@ -275,30 +275,56 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
         )}
 
         {/* Price Summary */}
-        {order && (
-          <div className="pt-4 border-t border-slate-100 space-y-1.5 text-xs">
-            <div className="flex justify-between text-slate-600">
-              <span>Subtotal</span>
-              <span className="font-medium text-slate-800 tabular-nums">Rs. {formatPrice(order.subtotal)}</span>
-            </div>
-            {typeof order.discount === 'number' && order.discount > 0 && (
-              <div className="flex justify-between text-emerald-700 font-semibold">
-                <span>Discount Applied</span>
-                <span className="tabular-nums">- Rs. {formatPrice(order.discount)}</span>
+        {order && (() => {
+          const computedItemsSubtotal = Array.isArray(order.items)
+            ? order.items.reduce((sum, item) => {
+                const qty = Math.max(1, Number(item.quantity || 1));
+                let itemPrice = Number(item.price || (item as any).unit_price || 0);
+                if (itemPrice <= 0 && item.total) {
+                  itemPrice = Number(item.total) / qty;
+                }
+                return sum + (itemPrice * qty);
+              }, 0)
+            : 0;
+
+          const displaySubtotal = (typeof order.subtotal === 'number' && order.subtotal > 0)
+            ? order.subtotal
+            : computedItemsSubtotal;
+
+          const discount = Number(order.discount || 0);
+          const shippingFee = (typeof order.shipping_fee === 'number' && order.shipping_fee >= 0)
+            ? order.shipping_fee
+            : (displaySubtotal >= 9999 ? 0 : 290);
+
+          const displayTotal = (typeof order.total_amount === 'number' && order.total_amount > 0)
+            ? order.total_amount
+            : Math.max(0, displaySubtotal - discount + shippingFee);
+
+          return (
+            <div className="pt-4 border-t border-slate-100 space-y-1.5 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Subtotal</span>
+                <span className="font-semibold text-slate-900 tabular-nums">Rs. {formatPrice(displaySubtotal)}</span>
               </div>
-            )}
-            <div className="flex justify-between text-slate-600">
-              <span>Delivery Fee</span>
-              <span className="font-medium text-slate-800 tabular-nums">
-                {order.shipping_fee === 0 ? 'FREE' : `Rs. ${formatPrice(order.shipping_fee)}`}
-              </span>
+              {discount > 0 && (
+                <div className="flex justify-between text-emerald-700 font-semibold">
+                  <span>Discount Applied</span>
+                  <span className="tabular-nums">- Rs. {formatPrice(discount)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-slate-600">
+                <span>Delivery Fee</span>
+                <span className="font-medium text-slate-800 tabular-nums">
+                  {shippingFee === 0 ? 'FREE' : `Rs. ${formatPrice(shippingFee)}`}
+                </span>
+              </div>
+              <div className="flex justify-between text-base font-extrabold text-[#093824] pt-2 border-t border-slate-200">
+                <span>Total Payable</span>
+                <span className="tabular-nums text-lg">Rs. {formatPrice(displayTotal)}</span>
+              </div>
             </div>
-            <div className="flex justify-between text-base font-extrabold text-[#093824] pt-2 border-t border-slate-200">
-              <span>Total Payable</span>
-              <span className="tabular-nums text-lg">Rs. {formatPrice(order.total_amount)}</span>
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
       </div>
 
