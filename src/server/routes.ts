@@ -1121,14 +1121,29 @@ router.get('/admin/metrics', requireAdmin, (req, res) => {
     const deliveredOrders = (db.prepare("SELECT COUNT(*) as c FROM orders WHERE order_status = 'Delivered'").get() as { c: number }).c;
     const cancelledOrders = (db.prepare("SELECT COUNT(*) as c FROM orders WHERE order_status = 'Cancelled'").get() as { c: number }).c;
 
-    const totalSalesRow = db.prepare("SELECT SUM(total_amount) as total FROM orders WHERE payment_status = 'paid' OR order_status = 'Delivered'").get() as { total: number };
-    const totalSales = totalSalesRow?.total || 0;
+    // Retrieve and normalize all orders to auto-heal item prices, subtotals, and total_amount
+    const rawOrders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all() as any[];
+    const allNormalizedOrders = rawOrders.map(o => normalizeOrder(o));
 
-    const todaySalesRow = db.prepare("SELECT SUM(total_amount) as total FROM orders WHERE date(created_at) = date('now') AND (payment_status = 'paid' OR order_status != 'Cancelled')").get() as { total: number };
-    const todaySales = todaySalesRow?.total || 0;
+    const todayDateStr = new Date().toISOString().slice(0, 10);
+
+    let totalSales = 0;
+    let todaySales = 0;
+
+    for (const o of allNormalizedOrders) {
+      if (o.order_status !== 'Cancelled') {
+        const amt = Number(o.total_amount || 0);
+        totalSales += amt;
+
+        const orderDate = (o.created_at || '').slice(0, 10);
+        if (orderDate === todayDateStr || !o.created_at) {
+          todaySales += amt;
+        }
+      }
+    }
 
     const lowStockProducts = db.prepare('SELECT id, name, sku, available_stock, low_stock_threshold FROM products WHERE available_stock <= low_stock_threshold').all();
-    const recentOrders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 8').all();
+    const recentOrders = allNormalizedOrders.slice(0, 8);
 
     res.json({
       totalOrders,

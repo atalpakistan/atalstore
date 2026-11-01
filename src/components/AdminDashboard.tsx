@@ -1148,7 +1148,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <td className="py-3 px-4 font-medium text-slate-900">{o.customer_name || 'Customer'}</td>
                           <td className="py-3 px-4">{o.city || 'Pakistan'}</td>
                           <td className="py-3 px-4 uppercase">{o.payment_method || 'COD'}</td>
-                          <td className="py-3 px-4 font-bold tabular-nums">Rs. {formatPrice(o.total_amount)}</td>
+                          <td className="py-3 px-4 font-bold tabular-nums">Rs. {formatPrice(extractOrderTotal(o))}</td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-0.5 rounded font-semibold text-[10px] bg-emerald-100 text-emerald-800">
                               {o.order_status || 'Pending'}
