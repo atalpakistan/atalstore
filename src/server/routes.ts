@@ -1076,7 +1076,21 @@ router.get('/orders/my', (req, res) => {
   const user = getAuthenticatedUser(req);
   if (!user) return res.status(401).json({ error: 'Please log in to view your orders' });
 
-  const rawOrders = db.prepare('SELECT * FROM orders WHERE customer_id = ? OR customer_email = ? ORDER BY created_at DESC').all(user.id, user.email) as any[];
+  const cleanPhone = user.phone ? user.phone.replace(/\D/g, '').slice(-10) : '';
+
+  const rawOrders = db.prepare(`
+    SELECT * FROM orders 
+    WHERE customer_id = ? 
+       OR (customer_email IS NOT NULL AND LOWER(customer_email) = LOWER(?))
+       OR (phone IS NOT NULL AND LENGTH(?) > 5 AND REPLACE(REPLACE(phone, ' ', ''), '-', '') LIKE ?)
+    ORDER BY created_at DESC
+  `).all(
+    user.id,
+    user.email,
+    cleanPhone,
+    `%${cleanPhone}%`
+  ) as any[];
+
   const orders = rawOrders.map(o => normalizeOrder(o));
   res.json(orders);
 });

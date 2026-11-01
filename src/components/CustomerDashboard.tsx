@@ -116,6 +116,58 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     return amt.toLocaleString('en-PK');
   };
 
+  const extractItemUnitPrice = (item: any): number => {
+    const candidates = [item.unit_price, item.price, item.product_price];
+    for (const c of candidates) {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    return 0;
+  };
+
+  const extractItemTotal = (item: any): number => {
+    const candidates = [item.total, item.line_total, item.total_price];
+    for (const c of candidates) {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    const unit = extractItemUnitPrice(item);
+    const qty = Number(item.quantity) || 1;
+    return unit * qty;
+  };
+
+  const extractOrderSubtotal = (ord: Order): number => {
+    const candidates = [ord.subtotal, (ord as any).sub_total];
+    for (const c of candidates) {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    if (ord.items && ord.items.length > 0) {
+      const sum = ord.items.reduce((acc, item) => acc + extractItemTotal(item), 0);
+      if (sum > 0) return sum;
+    }
+    const totalNum = Number(ord.total_amount);
+    const shipNum = Number(ord.shipping_fee) || 0;
+    const discNum = Number(ord.discount) || 0;
+    if (!isNaN(totalNum) && totalNum > 0) {
+      return Math.max(0, totalNum - shipNum + discNum);
+    }
+    return 0;
+  };
+
+  const extractOrderTotal = (ord: Order): number => {
+    const candidates = [ord.total_amount, (ord as any).total, (ord as any).grand_total];
+    for (const c of candidates) {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    const sub = extractOrderSubtotal(ord);
+    const ship = Number(ord.shipping_fee) || 0;
+    const disc = Number(ord.discount) || 0;
+    const calculated = sub + ship - disc;
+    return Math.max(0, calculated);
+  };
+
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return 'N/A';
     try {
@@ -336,7 +388,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                         <div className="flex items-center justify-between text-xs text-slate-500 mt-2">
                           <span>{formatDate(ord.created_at)}</span>
                           <span className="font-bold text-slate-900 tabular-nums text-sm">
-                            Rs. {formatPrice(ord.total_amount)}
+                            Rs. {formatPrice(extractOrderTotal(ord))}
                           </span>
                         </div>
 
@@ -445,8 +497,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                     <div>
                       <h4 className="text-xs font-bold text-slate-700 mb-3 uppercase tracking-wider">Itemized Breakdown</h4>
                       <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden p-3 bg-white">
-                        {selectedOrder.items?.map((item) => (
-                          <div key={item.id} className="py-2.5 flex items-center justify-between text-xs">
+                        {selectedOrder.items?.map((item, idx) => (
+                          <div key={item.id || item.product_id || idx} className="py-2.5 flex items-center justify-between text-xs">
                             <div className="flex items-center gap-3">
                               <img
                                 src={item.image_url || '/icon.svg'}
@@ -458,10 +510,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                                 <p className="text-slate-500 text-[11px]">
                                   Qty: {item.quantity} {item.variant_title && `· ${item.variant_title}`}
                                 </p>
+                                <p className="text-[#093824] font-semibold text-[11px] mt-0.5">
+                                  Price: Rs. {formatPrice(extractItemUnitPrice(item))}
+                                </p>
                               </div>
                             </div>
                             <span className="font-bold text-slate-900 tabular-nums text-sm">
-                              Rs. {formatPrice(item.total)}
+                              Rs. {formatPrice(extractItemTotal(item))}
                             </span>
                           </div>
                         ))}
@@ -481,7 +536,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                     <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
                       <div className="flex justify-between text-slate-600">
                         <span>Subtotal</span>
-                        <span className="font-semibold text-slate-900 tabular-nums">Rs. {formatPrice(selectedOrder.subtotal)}</span>
+                        <span className="font-semibold text-slate-900 tabular-nums">Rs. {formatPrice(extractOrderSubtotal(selectedOrder))}</span>
                       </div>
                       {selectedOrder.discount > 0 && (
                         <div className="flex justify-between text-emerald-700 font-semibold">
@@ -497,7 +552,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                       </div>
                       <div className="flex justify-between text-base font-extrabold text-[#093824] pt-2 border-t border-slate-200">
                         <span>Total Payable Amount</span>
-                        <span className="tabular-nums text-lg">Rs. {formatPrice(selectedOrder.total_amount)}</span>
+                        <span className="tabular-nums text-lg">Rs. {formatPrice(extractOrderTotal(selectedOrder))}</span>
                       </div>
                     </div>
 
@@ -677,8 +732,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                 <div>
                   <h4 className="text-xs font-bold text-slate-700 mb-2 uppercase tracking-wider">Ordered Items</h4>
                   <div className="divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden p-3 bg-white">
-                    {searchedOrder.items.map((it) => (
-                      <div key={it.id} className="py-2 flex items-center justify-between text-xs">
+                    {searchedOrder.items.map((it, idx) => (
+                      <div key={it.id || it.product_id || idx} className="py-2 flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2.5">
                           <img
                             src={it.image_url || '/icon.svg'}
@@ -688,10 +743,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                           <div>
                             <p className="font-bold text-slate-800">{it.product_name}</p>
                             <p className="text-slate-500 text-[11px]">Qty: {it.quantity} {it.variant_title && `· ${it.variant_title}`}</p>
+                            <p className="text-[#093824] font-semibold text-[11px] mt-0.5">
+                              Price: Rs. {formatPrice(extractItemUnitPrice(it))}
+                            </p>
                           </div>
                         </div>
                         <span className="font-bold text-slate-900 tabular-nums">
-                          Rs. {formatPrice(it.total)}
+                          Rs. {formatPrice(extractItemTotal(it))}
                         </span>
                       </div>
                     ))}
@@ -704,6 +762,30 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                 <h4 className="font-bold text-slate-800 mb-0.5">Shipping Destination</h4>
                 <p className="font-semibold text-slate-900">{searchedOrder.customer_name} ({searchedOrder.phone})</p>
                 <p className="text-slate-600">{searchedOrder.street_address}, {searchedOrder.city}, {searchedOrder.province}</p>
+              </div>
+
+              {/* Financial Summary */}
+              <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
+                <div className="flex justify-between text-slate-600">
+                  <span>Subtotal</span>
+                  <span className="font-semibold text-slate-900 tabular-nums">Rs. {formatPrice(extractOrderSubtotal(searchedOrder))}</span>
+                </div>
+                {searchedOrder.discount > 0 && (
+                  <div className="flex justify-between text-emerald-700 font-semibold">
+                    <span>Discount Applied</span>
+                    <span className="tabular-nums">- Rs. {formatPrice(searchedOrder.discount)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-slate-600">
+                  <span>Delivery Charges</span>
+                  <span className="font-semibold text-slate-900 tabular-nums">
+                    {searchedOrder.shipping_fee === 0 ? 'FREE' : `Rs. ${searchedOrder.shipping_fee}`}
+                  </span>
+                </div>
+                <div className="flex justify-between text-base font-extrabold text-[#093824] pt-2 border-t border-slate-200">
+                  <span>Total Payable Amount</span>
+                  <span className="tabular-nums text-lg">Rs. {formatPrice(extractOrderTotal(searchedOrder))}</span>
+                </div>
               </div>
 
               {/* Actions */}
