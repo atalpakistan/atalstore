@@ -169,7 +169,9 @@ export interface OrderItem {
   order_id: string;
   product_id: string;
   product_name: string;
+  variant_id?: string;
   variant_title?: string;
+  sku?: string;
   price: number;
   quantity: number;
   image_url: string;

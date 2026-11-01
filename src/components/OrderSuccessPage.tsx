@@ -181,26 +181,48 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
           <div className="space-y-3 pt-4 border-t border-slate-100">
             <h3 className="font-bold text-slate-800 text-sm">Ordered Items ({order.items.length})</h3>
             <div className="divide-y divide-slate-100">
-              {order.items.map((item) => (
-                <div key={item.id || Math.random()} className="py-2.5 flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={item.image_url || '/icon.svg'}
-                      alt={item.product_name || 'Product'}
-                      className="w-10 h-10 object-cover rounded-lg bg-slate-100 border border-slate-200"
-                    />
-                    <div>
-                      <p className="font-semibold text-slate-800">{item.product_name}</p>
-                      <p className="text-slate-500 text-[11px]">
-                        Qty: {item.quantity || 1} {item.variant_title ? `· ${item.variant_title}` : ''}
-                      </p>
+              {order.items.map((item, idx) => {
+                const itemKey = item.id || (item.product_id ? `${item.product_id}-${item.variant_id || idx}` : `item-${idx}`);
+                const unitPrice = item.price ?? (item.total && item.quantity ? item.total / item.quantity : 0);
+                const itemTotal = item.total ?? (unitPrice * (item.quantity || 1));
+
+                return (
+                  <div key={itemKey} className="py-3 flex items-center justify-between text-xs gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <img
+                        src={item.image_url || '/icon.svg'}
+                        alt={item.product_name || 'Product'}
+                        className="w-12 h-12 object-cover rounded-xl bg-slate-100 border border-slate-200 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-800 truncate">{item.product_name || 'Product'}</p>
+                        <div className="flex flex-wrap items-center gap-x-2 text-slate-500 text-[11px] mt-0.5">
+                          <span>Qty: <strong>{item.quantity || 1}</strong></span>
+                          <span>·</span>
+                          <span>Price: Rs. {formatPrice(unitPrice)}</span>
+                          {item.variant_title && (
+                            <>
+                              <span>·</span>
+                              <span className="text-emerald-800 font-medium">{item.variant_title}</span>
+                            </>
+                          )}
+                          {item.sku && (
+                            <>
+                              <span>·</span>
+                              <span className="font-mono text-slate-400">SKU: {item.sku}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="font-extrabold text-slate-900 tabular-nums block text-sm">
+                        Rs. {formatPrice(itemTotal)}
+                      </span>
                     </div>
                   </div>
-                  <span className="font-bold text-slate-900 tabular-nums">
-                    Rs. {formatPrice(item.total)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
