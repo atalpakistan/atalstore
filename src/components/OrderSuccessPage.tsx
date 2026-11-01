@@ -201,8 +201,37 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
             <div className="divide-y divide-slate-100">
               {order.items.map((item, idx) => {
                 const itemKey = item.id || (item.product_id ? `${item.product_id}-${item.variant_id || idx}` : `item-${idx}`);
-                const unitPrice = item.price ?? (item.total && item.quantity ? item.total / item.quantity : 0);
-                const itemTotal = item.total ?? (unitPrice * (item.quantity || 1));
+                const qty = Math.max(1, Number(item.quantity || 1));
+
+                // Extract non-zero selling price candidates
+                let unitPrice = 0;
+                const priceCandidates = [
+                  item.price,
+                  (item as any).unit_price,
+                  item.total ? Number(item.total) / qty : 0,
+                  (item as any).total_price ? Number((item as any).total_price) / qty : 0,
+                  (item as any).sale_price,
+                  (item as any).original_price,
+                ];
+
+                for (const candidate of priceCandidates) {
+                  const parsed = Number(candidate);
+                  if (!isNaN(parsed) && parsed > 0) {
+                    unitPrice = parsed;
+                    break;
+                  }
+                }
+
+                // Extract line item total
+                let itemTotal = unitPrice * qty;
+                const totalCandidates = [item.total, (item as any).total_price];
+                for (const candidate of totalCandidates) {
+                  const parsed = Number(candidate);
+                  if (!isNaN(parsed) && parsed > 0) {
+                    itemTotal = parsed;
+                    break;
+                  }
+                }
 
                 return (
                   <div key={itemKey} className="py-3 flex items-center justify-between text-xs gap-3">
@@ -215,9 +244,9 @@ export const OrderSuccessPage: React.FC<OrderSuccessPageProps> = ({
                       <div className="min-w-0">
                         <p className="font-bold text-slate-800 truncate">{item.product_name || 'Product'}</p>
                         <div className="flex flex-wrap items-center gap-x-2 text-slate-500 text-[11px] mt-0.5">
-                          <span>Qty: <strong>{item.quantity || 1}</strong></span>
+                          <span>Qty: <strong>{qty}</strong></span>
                           <span>·</span>
-                          <span>Price: Rs. {formatPrice(unitPrice)}</span>
+                          <span className="font-medium text-slate-700">Price: Rs. {formatPrice(unitPrice)}</span>
                           {item.variant_title && (
                             <>
                               <span>·</span>

@@ -721,7 +721,19 @@ function normalizeOrder(order: any) {
   let computedSubtotal = 0;
   if (Array.isArray(order.items)) {
     for (const item of order.items) {
-      item.price = Number(item.price || 0);
+      let itemPrice = Number(item.price || item.unit_price || 0);
+
+      // If price is 0 or missing, look up canonical price from products database table!
+      if (itemPrice <= 0 && item.product_id) {
+        const prod = db.prepare('SELECT sale_price, original_price FROM products WHERE id = ?').get(item.product_id) as any;
+        if (prod && Number(prod.sale_price) > 0) {
+          itemPrice = Number(prod.sale_price);
+        } else if (prod && Number(prod.original_price) > 0) {
+          itemPrice = Number(prod.original_price);
+        }
+      }
+
+      item.price = itemPrice;
       item.quantity = Math.max(1, Number(item.quantity || 1));
       
       // If image_url is missing or placeholder, look up from product table
@@ -741,6 +753,13 @@ function normalizeOrder(order: any) {
       // Force recalculation of line total
       item.total = item.price * item.quantity;
       computedSubtotal += item.total;
+
+      // Update SQLite DB table if item price was 0 to permanently heal database record
+      if (item.id && itemPrice > 0) {
+        try {
+          db.prepare('UPDATE order_items SET price = ?, total = ? WHERE id = ?').run(itemPrice, item.total, item.id);
+        } catch {}
+      }
       
       console.log(`🔍 [Normalize Order Item] Order: ${order.id} | Product: ${item.product_name} | Price: ${item.price} | Qty: ${item.quantity} | Computed Total: ${item.total}`);
     }
@@ -751,6 +770,13 @@ function normalizeOrder(order: any) {
   order.discount = Number(order.discount || 0);
   order.shipping_fee = Number(order.shipping_fee !== undefined && order.shipping_fee !== null ? order.shipping_fee : 290);
   order.total_amount = Math.max(0, order.subtotal - order.discount + order.shipping_fee);
+
+  // Auto-heal orders table in DB if subtotal/total_amount was 0
+  if (order.id && computedSubtotal > 0 && (existingSubtotal <= 0 || isNaN(existingSubtotal))) {
+    try {
+      db.prepare('UPDATE orders SET subtotal = ?, total_amount = ? WHERE id = ?').run(order.subtotal, order.total_amount, order.id);
+    } catch {}
+  }
 
   console.log(`🧾 [Normalize Order Summary] Order: ${order.id} | Subtotal: ${order.subtotal} | Discount: ${order.discount} | Shipping: ${order.shipping_fee} | Total: ${order.total_amount}`);
 
