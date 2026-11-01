@@ -119,6 +119,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
+  const extractItemUnitPrice = (it: any): number => {
+    const qty = Math.max(1, Number(it.quantity || 1));
+    const candidates = [
+      it.price,
+      it.unit_price,
+      it.total ? Number(it.total) / qty : 0,
+      it.total_price ? Number(it.total_price) / qty : 0,
+      it.sale_price,
+      it.original_price,
+      it.product?.sale_price,
+      it.product?.price,
+    ];
+    for (const c of candidates) {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    return 0;
+  };
+
+  const extractItemTotal = (it: any): number => {
+    const qty = Math.max(1, Number(it.quantity || 1));
+    const candidates = [it.total, it.total_price];
+    for (const c of candidates) {
+      const num = Number(c);
+      if (!isNaN(num) && num > 0) return num;
+    }
+    const uPrice = extractItemUnitPrice(it);
+    return uPrice * qty;
+  };
+
+  const extractOrderSubtotal = (order: Order): number => {
+    if (typeof order.subtotal === 'number' && order.subtotal > 0) {
+      return order.subtotal;
+    }
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      const itemsSum = order.items.reduce((sum, it) => sum + extractItemTotal(it), 0);
+      if (itemsSum > 0) return itemsSum;
+    }
+    return Number(order.subtotal) || 0;
+  };
+
+  const extractOrderTotal = (order: Order): number => {
+    if (typeof order.total_amount === 'number' && order.total_amount > 0) {
+      return order.total_amount;
+    }
+    const sub = extractOrderSubtotal(order);
+    const discount = Number(order.discount || 0);
+    const shipping = Number(order.shipping_fee !== undefined && order.shipping_fee !== null ? order.shipping_fee : (sub >= 9999 ? 0 : 290));
+    const grand = Math.max(0, sub - discount + shipping);
+    return grand > 0 ? grand : Number(order.total_amount) || 0;
+  };
+
   // 1. Fetch Metrics
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
@@ -1823,7 +1875,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </td>
 
                               <td className="py-3 px-4 font-bold text-slate-900 tabular-nums">
-                                Rs. {formatPrice(o.total_amount)}
+                                Rs. {formatPrice(extractOrderTotal(o))}
                               </td>
 
                               <td className="py-3 px-4">
@@ -2087,55 +2139,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             Order Items ({selectedOrder.items.length}):
                           </span>
                           <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto no-scrollbar pr-1">
-                            {selectedOrder.items.map((it) => (
-                              <div key={it.id || Math.random()} className="py-2 flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-2.5 min-w-0">
-                                  <img
-                                    src={it.image_url || '/icon.svg'}
-                                    alt={it.product_name}
-                                    className="w-9 h-9 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
-                                  />
-                                  <div className="truncate">
-                                    <p className="font-semibold text-slate-800 truncate">{it.product_name}</p>
-                                    <p className="text-slate-500 text-[11px]">
-                                      Qty: {it.quantity} {it.variant_title && `· ${it.variant_title}`}
-                                    </p>
+                            {selectedOrder.items.map((it) => {
+                              const uPrice = extractItemUnitPrice(it);
+                              const lineTot = extractItemTotal(it);
+                              return (
+                                <div key={it.id || Math.random()} className="py-2 flex items-center justify-between text-xs gap-3">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <img
+                                      src={it.image_url || '/icon.svg'}
+                                      alt={it.product_name}
+                                      className="w-9 h-9 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
+                                    />
+                                    <div className="truncate">
+                                      <p className="font-semibold text-slate-800 truncate">{it.product_name}</p>
+                                      <p className="text-slate-500 text-[11px]">
+                                        Qty: {it.quantity || 1} · Price: Rs. {formatPrice(uPrice)} {it.variant_title && `· ${it.variant_title}`}
+                                      </p>
+                                    </div>
                                   </div>
+                                  <span className="font-bold text-slate-900 tabular-nums shrink-0">
+                                    Rs. {formatPrice(lineTot)}
+                                  </span>
                                 </div>
-                                <span className="font-bold text-slate-900 tabular-nums shrink-0">
-                                  Rs. {formatPrice(it.total)}
-                                </span>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       )}
 
                       {/* Section 5: Financial Summary */}
-                      <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs">
-                        <div className="flex justify-between text-slate-600">
-                          <span>Subtotal</span>
-                          <span className="tabular-nums">Rs. {formatPrice(selectedOrder.subtotal)}</span>
-                        </div>
-                        {(selectedOrder.discount || 0) > 0 && (
-                          <div className="flex justify-between text-emerald-700">
-                            <span>Discount</span>
-                            <span className="tabular-nums">- Rs. {formatPrice(selectedOrder.discount)}</span>
+                      {(() => {
+                        const sub = extractOrderSubtotal(selectedOrder);
+                        const grand = extractOrderTotal(selectedOrder);
+                        const discount = Number(selectedOrder.discount || 0);
+                        const shipping = Number(selectedOrder.shipping_fee !== undefined && selectedOrder.shipping_fee !== null ? selectedOrder.shipping_fee : (sub >= 9999 ? 0 : 290));
+
+                        return (
+                          <div className="p-3 bg-slate-50 rounded-xl space-y-1 text-xs">
+                            <div className="flex justify-between text-slate-600">
+                              <span>Subtotal</span>
+                              <span className="tabular-nums font-semibold text-slate-900">Rs. {formatPrice(sub)}</span>
+                            </div>
+                            {discount > 0 && (
+                              <div className="flex justify-between text-emerald-700 font-semibold">
+                                <span>Discount</span>
+                                <span className="tabular-nums">- Rs. {formatPrice(discount)}</span>
+                              </div>
+                            )}
+                            <div className="flex justify-between text-slate-600">
+                              <span>Delivery Charges</span>
+                              <span className="tabular-nums font-medium text-slate-800">
+                                {shipping === 0 ? 'FREE' : `Rs. ${formatPrice(shipping)}`}
+                              </span>
+                            </div>
+                            <div className="flex justify-between font-extrabold text-slate-900 text-sm pt-1 border-t border-slate-200">
+                              <span>Total Amount</span>
+                              <span className="tabular-nums text-[#093824]">
+                                Rs. {formatPrice(grand)}
+                              </span>
+                            </div>
                           </div>
-                        )}
-                        <div className="flex justify-between text-slate-600">
-                          <span>Delivery Charges</span>
-                          <span className="tabular-nums">
-                            {selectedOrder.shipping_fee === 0 ? 'FREE' : `Rs. ${formatPrice(selectedOrder.shipping_fee)}`}
-                          </span>
-                        </div>
-                        <div className="flex justify-between font-bold text-slate-900 text-sm pt-1 border-t border-slate-200">
-                          <span>Total Amount</span>
-                          <span className="tabular-nums text-[#093824]">
-                            Rs. {formatPrice(selectedOrder.total_amount)}
-                          </span>
-                        </div>
-                      </div>
+                        );
+                      })()}
 
                       {/* Modal Actions */}
                       <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
