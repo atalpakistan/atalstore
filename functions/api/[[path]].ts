@@ -407,6 +407,35 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       return jsonResponse(diag);
     }
 
+    if (endpoint === 'admin/supabase-schema' && request.method === 'GET') {
+      return jsonResponse({
+        success: true,
+        projectUrl: 'https://eiufrljvgyswhvclfajs.supabase.co',
+        sqlUrl: 'https://supabase.com/dashboard/project/eiufrljvgyswhvclfajs/sql/new',
+      });
+    }
+
+    if (endpoint === 'admin/supabase-sync-all' && request.method === 'POST') {
+      if (!isSupabaseConfigured(env)) {
+        return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+      }
+      try {
+        await updateSettingsInSupabase(DEFAULT_SETTINGS, env);
+        for (const cat of DEFAULT_CATEGORIES) {
+          await saveCategoryInSupabase(cat, env);
+        }
+        for (const p of DEFAULT_PRODUCTS) {
+          await saveProductInSupabase(p, env);
+        }
+        return jsonResponse({
+          success: true,
+          message: 'Initial data synced into Supabase database successfully!',
+        });
+      } catch (err: any) {
+        return jsonResponse({ error: err?.message || 'Sync failed' }, 500);
+      }
+    }
+
     // A. Metrics
     if (endpoint === 'admin/metrics' && request.method === 'GET') {
       let ordersList: any[] = [];

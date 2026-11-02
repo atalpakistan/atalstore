@@ -14,8 +14,18 @@ export function getEnvVar(name: string, envObj?: any): string | undefined {
   return undefined;
 }
 
+export function cleanSupabaseUrl(rawUrl?: string): string | undefined {
+  if (!rawUrl) return undefined;
+  let url = rawUrl.trim();
+  url = url.replace(/\/+$/, '');
+  url = url.replace(/\/rest\/v1\/?$/i, '');
+  url = url.replace(/\/+$/, '');
+  return url;
+}
+
 export function getSupabaseClient(envObj?: any): SupabaseClient | null {
-  const url = getEnvVar('SUPABASE_URL', envObj);
+  const rawUrl = getEnvVar('SUPABASE_URL', envObj);
+  const url = cleanSupabaseUrl(rawUrl);
   const key =
     getEnvVar('SUPABASE_SERVICE_ROLE_KEY', envObj) ||
     getEnvVar('SUPABASE_ANON_KEY', envObj);

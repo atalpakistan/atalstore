@@ -249,6 +249,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     error?: string;
   } | null>(null);
   const [checkingDbStatus, setCheckingDbStatus] = useState(false);
+  const [copyingSchema, setCopyingSchema] = useState(false);
+  const [syncingAll, setSyncingAll] = useState(false);
 
   const fetchDbStatus = async () => {
     setCheckingDbStatus(true);
@@ -257,6 +259,41 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setDbStatus(data);
     }
     setCheckingDbStatus(false);
+  };
+
+  const handleCopySupabaseSchema = async () => {
+    setCopyingSchema(true);
+    try {
+      const { ok, data, error } = await safeFetchJson<any>('/api/admin/supabase-schema', { headers: authHeaders });
+      if (ok && data?.sql) {
+        await navigator.clipboard.writeText(data.sql);
+        showFeedback('Supabase SQL Schema copied to clipboard! Paste it into Supabase SQL Editor.', 'success');
+      } else {
+        showFeedback(error || 'Failed to copy schema', 'error');
+      }
+    } catch {
+      showFeedback('Failed to copy schema', 'error');
+    }
+    setCopyingSchema(false);
+  };
+
+  const handleSyncAllToSupabase = async () => {
+    setSyncingAll(true);
+    try {
+      const { ok, data, error } = await safeFetchJson<any>('/api/admin/supabase-sync-all', {
+        method: 'POST',
+        headers: authHeaders,
+      });
+      if (ok) {
+        showFeedback(data?.message || 'Data successfully synced to Supabase!', 'success');
+        fetchDbStatus();
+      } else {
+        showFeedback(error || 'Sync failed: ensure tables are created in Supabase first', 'error');
+      }
+    } catch {
+      showFeedback('Sync failed', 'error');
+    }
+    setSyncingAll(false);
   };
 
   useEffect(() => {
@@ -940,8 +977,83 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </header>
 
-      {/* Cloudflare Pages Database Setup Alert */}
-      {dbStatus && dbStatus.status !== 'connected' && (
+      {/* Supabase Persistent Database Status Banners */}
+      {dbStatus && dbStatus.hasKey && (!dbStatus.tables?.settings || dbStatus.status !== 'connected') && (
+        <div className="bg-emerald-950 border-b border-emerald-800 text-emerald-100 px-4 py-3 text-xs">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0 mt-0.5 sm:mt-0" />
+              <div>
+                <strong className="text-amber-300">Supabase Connected:</strong>
+                <span className="text-slate-200 ml-1.5">
+                  Project <code className="bg-emerald-900/90 px-1.5 py-0.5 rounded text-amber-200 font-mono text-[11px] font-semibold">eiufrljvgyswhvclfajs.supabase.co</code> verified with Service Key. To complete 1-time setup, paste the SQL schema in your Supabase SQL Editor.
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                onClick={handleCopySupabaseSchema}
+                disabled={copyingSchema}
+                className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
+              >
+                <span>{copyingSchema ? 'Copying...' : '📋 Copy SQL Schema'}</span>
+              </button>
+              <a
+                href="https://supabase.com/dashboard/project/eiufrljvgyswhvclfajs/sql/new"
+                target="_blank"
+                rel="noreferrer"
+                className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg font-medium text-xs flex items-center gap-1 transition"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Open SQL Editor</span>
+              </a>
+              <button
+                onClick={fetchDbStatus}
+                disabled={checkingDbStatus}
+                className="px-2.5 py-1.5 bg-emerald-900 hover:bg-emerald-800 text-emerald-200 rounded-lg font-medium text-xs flex items-center gap-1 border border-emerald-700 transition"
+              >
+                <RefreshCw className={`w-3 h-3 ${checkingDbStatus ? 'animate-spin' : ''}`} />
+                <span>Recheck Tables</span>
+              </button>
+              <button
+                onClick={handleSyncAllToSupabase}
+                disabled={syncingAll}
+                className="px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 rounded-lg font-medium text-xs flex items-center gap-1 transition"
+              >
+                <span>{syncingAll ? 'Syncing...' : '⚡ Sync Store Data'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {dbStatus && dbStatus.status === 'connected' && (
+        <div className="bg-emerald-900/90 border-b border-emerald-700/60 text-emerald-100 px-4 py-2 text-xs flex flex-col sm:flex-row items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>
+              <strong>Supabase Database Active:</strong> Changes to products, categories, orders, and site settings are permanently saved to Supabase (<code className="bg-emerald-950 px-1.5 py-0.5 rounded text-amber-200 font-mono">eiufrljvgyswhvclfajs</code>).
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={runPersistenceDiagnostic}
+              className="px-2.5 py-1 bg-emerald-800 hover:bg-emerald-700 text-amber-300 rounded font-semibold text-[11px] transition"
+            >
+              Verify Persistence
+            </button>
+            <button
+              onClick={handleSyncAllToSupabase}
+              disabled={syncingAll}
+              className="px-2.5 py-1 bg-emerald-950 hover:bg-black text-emerald-200 border border-emerald-600 rounded font-semibold text-[11px] transition"
+            >
+              {syncingAll ? 'Syncing...' : '⚡ Sync Data'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {dbStatus && !dbStatus.hasKey && (
         <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-950 px-4 py-2.5 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />

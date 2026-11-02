@@ -1253,6 +1253,78 @@ router.get('/admin/db-status', requireAdmin, async (req, res) => {
   }
 });
 
+router.get('/admin/supabase-schema', requireAdmin, (req, res) => {
+  try {
+    const schemaPath = path.join(process.cwd(), 'supabase_schema.sql');
+    if (fs.existsSync(schemaPath)) {
+      const sql = fs.readFileSync(schemaPath, 'utf8');
+      return res.json({ success: true, sql });
+    }
+    return res.status(404).json({ error: 'Schema file not found' });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/admin/supabase-sync-all', requireAdmin, async (req, res) => {
+  try {
+    if (!isSupabaseConfigured()) {
+      return res.status(503).json({ error: 'Supabase credentials not configured' });
+    }
+
+    const settingsRows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+    const settingsObj: Record<string, any> = {};
+    for (const r of settingsRows) settingsObj[r.key] = r.value;
+    await updateSettingsInSupabase(settingsObj);
+
+    const categories = db.prepare('SELECT * FROM categories').all() as any[];
+    for (const cat of categories) {
+      await saveCategoryInSupabase(cat);
+    }
+
+    const products = db.prepare('SELECT * FROM products').all() as any[];
+    for (const prod of products) {
+      prod.images = safeJsonParse(prod.images, []);
+      prod.variants = db.prepare('SELECT * FROM product_variants WHERE product_id = ?').all(prod.id);
+      await saveProductInSupabase(prod);
+    }
+
+    const banners = db.prepare('SELECT * FROM banners').all() as any[];
+    for (const b of banners) {
+      await saveBannerInSupabase(b);
+    }
+
+    const sections = db.prepare('SELECT * FROM homepage_sections').all() as any[];
+    if (sections.length > 0) {
+      await saveSectionsInSupabase(sections);
+    }
+
+    const coupons = db.prepare('SELECT * FROM coupons').all() as any[];
+    for (const c of coupons) {
+      await saveCouponInSupabase(c);
+    }
+
+    const launchSoon = db.prepare('SELECT * FROM launch_soon').all() as any[];
+    for (const ls of launchSoon) {
+      await saveLaunchSoonInSupabase(ls);
+    }
+
+    return res.json({
+      success: true,
+      message: 'All store data successfully synced to Supabase!',
+      synced: {
+        settings: settingsRows.length,
+        categories: categories.length,
+        products: products.length,
+        banners: banners.length,
+        coupons: coupons.length,
+      }
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 router.get('/admin/metrics', requireAdmin, (req, res) => {
   try {
     const totalOrders = (db.prepare('SELECT COUNT(*) as c FROM orders').get() as { c: number }).c;
