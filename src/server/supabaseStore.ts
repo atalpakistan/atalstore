@@ -942,3 +942,464 @@ export async function uploadImageToSupabaseStorage(
     return base64Data;
   }
 }
+
+// -------------------------------------------------------------------
+// 11. LIVE SCHEMA INTROSPECTION & SQL GENERATION
+// -------------------------------------------------------------------
+
+export async function generateLiveDatabaseSchema(envObj?: any): Promise<{
+  success: boolean;
+  sql?: string;
+  source?: 'live_introspected' | 'schema_file' | 'schema_template';
+  tablesCount?: number;
+  databaseUrl?: string;
+  timestamp?: string;
+  error?: string;
+}> {
+  const rawUrl = getEnvVar('SUPABASE_URL', envObj);
+  const url = cleanSupabaseUrl(rawUrl);
+  const serviceKey = getEnvVar('SUPABASE_SERVICE_ROLE_KEY', envObj);
+  const anonKey = getEnvVar('SUPABASE_ANON_KEY', envObj);
+  const key = serviceKey || anonKey;
+
+  if (!url || !key) {
+    return {
+      success: false,
+      error: 'Supabase database credentials (SUPABASE_URL & key) are not configured in environment variables.',
+    };
+  }
+
+  const cleanHost = url.replace(/^https?:\/\//, '').split('/')[0];
+  const timestamp = new Date().toISOString();
+
+  try {
+    // 1. Fetch live OpenAPI schema definition from connected Supabase PostgREST
+    const openApiUrl = `${url}/rest/v1/`;
+    const openApiRes = await fetch(openApiUrl, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+      },
+    }).catch(() => null);
+
+    let introspectedSql = '';
+    let tablesCount = 0;
+
+    if (openApiRes && openApiRes.ok) {
+      const openApiJson = await openApiRes.json().catch(() => null);
+      const definitions = openApiJson?.definitions || {};
+      const defKeys = Object.keys(definitions).filter((k) => k !== 'rpc');
+
+      if (defKeys.length > 0) {
+        tablesCount = defKeys.length;
+        introspectedSql += `-- ====================================================================\n`;
+        introspectedSql += `-- ATAL STORE — LIVE INTROSPECTED SUPABASE DATABASE SCHEMA\n`;
+        introspectedSql += `-- Introspected from: ${cleanHost}\n`;
+        introspectedSql += `-- Introspected at:   ${timestamp}\n`;
+        introspectedSql += `-- Total Tables:       ${tablesCount} (${defKeys.join(', ')})\n`;
+        introspectedSql += `-- ====================================================================\n\n`;
+
+        for (const tableName of defKeys) {
+          const def = definitions[tableName];
+          const props = def.properties || {};
+          const requiredCols = new Set<string>(def.required || []);
+          const colsSql: string[] = [];
+
+          introspectedSql += `-- --------------------------------------------------------------------\n`;
+          introspectedSql += `-- TABLE: public.${tableName}\n`;
+          if (def.description) {
+            introspectedSql += `-- ${def.description.replace(/\n/g, '\n-- ')}\n`;
+          }
+          introspectedSql += `-- --------------------------------------------------------------------\n`;
+          introspectedSql += `CREATE TABLE IF NOT EXISTS public.${tableName} (\n`;
+
+          for (const [colName, info] of Object.entries<any>(props)) {
+            let pgType = 'TEXT';
+            if (info.type === 'integer') {
+              pgType = 'INTEGER';
+            } else if (info.type === 'number') {
+              pgType = 'NUMERIC';
+            } else if (info.type === 'boolean') {
+              pgType = 'BOOLEAN';
+            } else if (info.type === 'array' || info.type === 'object') {
+              pgType = 'JSONB';
+            } else if (info.format && info.format.includes('date')) {
+              pgType = 'TIMESTAMPTZ';
+            }
+
+            const isPk = colName === 'id' || colName === 'key' || colName === 'section_key' || colName === 'old_slug';
+            const pkClause = isPk ? ' PRIMARY KEY' : '';
+            const notNullClause = requiredCols.has(colName) || isPk ? ' NOT NULL' : '';
+            
+            let defaultClause = '';
+            if (colName === 'created_at' || colName === 'updated_at') {
+              defaultClause = ' DEFAULT NOW()';
+            } else if (colName === 'display_order' || colName === 'usage_count' || colName === 'festive_deal_order' || colName === 'spotlight_order' || colName === 'new_launch_order') {
+              defaultClause = ' DEFAULT 0';
+            } else if (colName === 'is_active' || colName === 'is_enabled') {
+              defaultClause = ' DEFAULT 1';
+            } else if (colName === 'currency') {
+              defaultClause = " DEFAULT 'PKR'";
+            } else if (colName === 'brand') {
+              defaultClause = " DEFAULT 'ATAL'";
+            }
+
+            // Check foreign keys
+            let fkClause = '';
+            if (colName === 'category_id' && tableName !== 'categories') {
+              fkClause = ' REFERENCES public.categories(id)';
+            } else if (colName === 'subcategory_id') {
+              fkClause = ' REFERENCES public.subcategories(id)';
+            } else if (colName === 'product_id' && tableName !== 'products') {
+              fkClause = ' REFERENCES public.products(id) ON DELETE CASCADE';
+            } else if (colName === 'order_id' && tableName === 'order_items') {
+              fkClause = ' REFERENCES public.orders(id) ON DELETE CASCADE';
+            } else if (colName === 'customer_id') {
+              fkClause = ' REFERENCES public.customers(id) ON DELETE CASCADE';
+            }
+
+            colsSql.push(`  ${colName} ${pgType}${pkClause}${fkClause}${notNullClause}${defaultClause}`);
+          }
+
+          introspectedSql += colsSql.join(',\n');
+          introspectedSql += `\n);\n\n`;
+
+          // Enable RLS for table
+          introspectedSql += `ALTER TABLE public.${tableName} ENABLE ROW LEVEL SECURITY;\n`;
+          introspectedSql += `CREATE POLICY IF NOT EXISTS "Public Read ${tableName}" ON public.${tableName} FOR SELECT USING (true);\n`;
+          introspectedSql += `CREATE POLICY IF NOT EXISTS "Service Role Full ${tableName}" ON public.${tableName} FOR ALL USING (true) WITH CHECK (true);\n\n`;
+        }
+
+        // Add functions, triggers & indexes
+        introspectedSql += `-- --------------------------------------------------------------------\n`;
+        introspectedSql += `-- DATABASE FUNCTIONS & TRIGGERS\n`;
+        introspectedSql += `-- --------------------------------------------------------------------\n`;
+        introspectedSql += `CREATE OR REPLACE FUNCTION public.handle_updated_at()\n`;
+        introspectedSql += `RETURNS TRIGGER AS $$\n`;
+        introspectedSql += `BEGIN\n`;
+        introspectedSql += `  NEW.updated_at = NOW();\n`;
+        introspectedSql += `  RETURN NEW;\n`;
+        introspectedSql += `END;\n`;
+        introspectedSql += `$$ LANGUAGE plpgsql;\n\n`;
+
+        introspectedSql += `-- INDEXES FOR HIGH-PERFORMANCE QUERYING\n`;
+        introspectedSql += `CREATE INDEX IF NOT EXISTS idx_products_category ON public.products(category_id);\n`;
+        introspectedSql += `CREATE INDEX IF NOT EXISTS idx_products_slug ON public.products(slug);\n`;
+        introspectedSql += `CREATE INDEX IF NOT EXISTS idx_orders_customer ON public.orders(customer_id);\n`;
+        introspectedSql += `CREATE INDEX IF NOT EXISTS idx_orders_created ON public.orders(created_at DESC);\n\n`;
+
+        return {
+          success: true,
+          sql: introspectedSql,
+          source: 'live_introspected',
+          tablesCount,
+          databaseUrl: cleanHost,
+          timestamp,
+        };
+      }
+    }
+
+    // 2. Fallback to complete schema definition if live tables are not yet initialized in PostgREST
+    const fallbackSql = `-- ====================================================================
+-- ATAL STORE — COMPLETE SUPABASE POSTGRESQL DATABASE SCHEMA & RLS POLICIES
+-- Target Connected Database: ${cleanHost}
+-- Timestamp:                ${timestamp}
+-- ====================================================================
+
+-- 1. SETTINGS TABLE
+CREATE TABLE IF NOT EXISTS public.settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. CATEGORIES TABLE
+CREATE TABLE IF NOT EXISTS public.categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  icon TEXT NOT NULL,
+  image TEXT NOT NULL,
+  description TEXT,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. SUBCATEGORIES TABLE
+CREATE TABLE IF NOT EXISTS public.subcategories (
+  id TEXT PRIMARY KEY,
+  category_id TEXT NOT NULL REFERENCES public.categories(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. PRODUCTS TABLE
+CREATE TABLE IF NOT EXISTS public.products (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  sku TEXT NOT NULL,
+  brand TEXT NOT NULL DEFAULT 'ATAL',
+  category_id TEXT NOT NULL REFERENCES public.categories(id),
+  subcategory_id TEXT REFERENCES public.subcategories(id),
+  short_description TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  images JSONB NOT NULL DEFAULT '[]'::jsonb,
+  purchase_price NUMERIC DEFAULT 0,
+  original_price NUMERIC NOT NULL DEFAULT 0,
+  sale_price NUMERIC NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'PKR',
+  available_stock INTEGER NOT NULL DEFAULT 10,
+  low_stock_threshold INTEGER NOT NULL DEFAULT 5,
+  weight NUMERIC DEFAULT 0,
+  dimensions TEXT DEFAULT '',
+  shipping_requirements TEXT DEFAULT '',
+  seo_title TEXT DEFAULT '',
+  seo_description TEXT DEFAULT '',
+  new_launch INTEGER NOT NULL DEFAULT 0,
+  spotlight INTEGER NOT NULL DEFAULT 0,
+  festive_deal INTEGER NOT NULL DEFAULT 0,
+  festive_deal_order INTEGER DEFAULT 0,
+  spotlight_order INTEGER DEFAULT 0,
+  new_launch_order INTEGER DEFAULT 0,
+  rating NUMERIC NOT NULL DEFAULT 5.0,
+  reviews_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 5. PRODUCT VARIANTS TABLE
+CREATE TABLE IF NOT EXISTS public.product_variants (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  color_name TEXT,
+  color_code TEXT,
+  size TEXT,
+  sku TEXT NOT NULL,
+  price NUMERIC NOT NULL DEFAULT 0,
+  stock INTEGER NOT NULL DEFAULT 0,
+  image_url TEXT
+);
+
+-- 6. LAUNCH SOON TABLE
+CREATE TABLE IF NOT EXISTS public.launch_soon (
+  id TEXT PRIMARY KEY,
+  product_name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  short_description TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL,
+  expected_launch_date TEXT NOT NULL,
+  countdown_target TEXT,
+  coming_soon_badge TEXT NOT NULL DEFAULT 'Coming Soon',
+  display_order INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. BANNERS TABLE
+CREATE TABLE IF NOT EXISTS public.banners (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  subtitle TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL,
+  cta_text TEXT NOT NULL DEFAULT 'Shop Now',
+  cta_url TEXT NOT NULL DEFAULT '/',
+  display_order INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  start_date TIMESTAMPTZ,
+  end_date TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 8. HOMEPAGE SECTIONS TABLE
+CREATE TABLE IF NOT EXISTS public.homepage_sections (
+  section_key TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  is_enabled INTEGER NOT NULL DEFAULT 1,
+  display_order INTEGER NOT NULL DEFAULT 0,
+  layout TEXT DEFAULT 'carousel',
+  max_items INTEGER NOT NULL DEFAULT 12,
+  custom_settings TEXT
+);
+
+-- 9. CUSTOMERS TABLE
+CREATE TABLE IF NOT EXISTS public.customers (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  role TEXT NOT NULL DEFAULT 'customer',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 10. ORDERS TABLE
+CREATE TABLE IF NOT EXISTS public.orders (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT,
+  customer_name TEXT NOT NULL,
+  customer_email TEXT,
+  phone TEXT NOT NULL,
+  province TEXT NOT NULL,
+  city TEXT NOT NULL,
+  area TEXT NOT NULL,
+  street_address TEXT NOT NULL,
+  landmark TEXT,
+  order_notes TEXT,
+  subtotal NUMERIC NOT NULL,
+  discount NUMERIC NOT NULL DEFAULT 0,
+  shipping_fee NUMERIC NOT NULL DEFAULT 290,
+  total_amount NUMERIC NOT NULL,
+  payment_method TEXT NOT NULL,
+  payment_status TEXT NOT NULL DEFAULT 'pending',
+  order_status TEXT NOT NULL DEFAULT 'Pending',
+  tracking_number TEXT,
+  tracking_courier TEXT,
+  transaction_ref TEXT,
+  transaction_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 11. ORDER ITEMS TABLE
+CREATE TABLE IF NOT EXISTS public.order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES public.orders(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL,
+  product_name TEXT NOT NULL,
+  variant_title TEXT,
+  price NUMERIC NOT NULL,
+  quantity INTEGER NOT NULL,
+  image_url TEXT,
+  total NUMERIC NOT NULL
+);
+
+-- 12. COUPONS TABLE
+CREATE TABLE IF NOT EXISTS public.coupons (
+  id TEXT PRIMARY KEY,
+  code TEXT NOT NULL UNIQUE,
+  discount_type TEXT NOT NULL,
+  discount_value NUMERIC NOT NULL,
+  min_order_amount NUMERIC NOT NULL DEFAULT 0,
+  usage_count INTEGER NOT NULL DEFAULT 0,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 13. WISHLIST ITEMS TABLE
+CREATE TABLE IF NOT EXISTS public.wishlist_items (
+  id TEXT PRIMARY KEY,
+  customer_id TEXT NOT NULL REFERENCES public.customers(id) ON DELETE CASCADE,
+  product_id TEXT NOT NULL REFERENCES public.products(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 14. AUDIT LOGS TABLE
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  details TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 15. SLUG REDIRECTS TABLE
+CREATE TABLE IF NOT EXISTS public.slug_redirects (
+  old_slug TEXT PRIMARY KEY,
+  new_slug TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ====================================================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- ====================================================================
+
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.subcategories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.product_variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.launch_soon ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.banners ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.homepage_sections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.wishlist_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.slug_redirects ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public Read Settings" ON public.settings FOR SELECT USING (true);
+CREATE POLICY "Public Read Categories" ON public.categories FOR SELECT USING (true);
+CREATE POLICY "Public Read Subcategories" ON public.subcategories FOR SELECT USING (true);
+CREATE POLICY "Public Read Products" ON public.products FOR SELECT USING (true);
+CREATE POLICY "Public Read Product Variants" ON public.product_variants FOR SELECT USING (true);
+CREATE POLICY "Public Read Launch Soon" ON public.launch_soon FOR SELECT USING (true);
+CREATE POLICY "Public Read Banners" ON public.banners FOR SELECT USING (true);
+CREATE POLICY "Public Read Homepage Sections" ON public.homepage_sections FOR SELECT USING (true);
+CREATE POLICY "Public Read Coupons" ON public.coupons FOR SELECT USING (true);
+CREATE POLICY "Public Insert Orders" ON public.orders FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Select Orders" ON public.orders FOR SELECT USING (true);
+CREATE POLICY "Public Insert Order Items" ON public.order_items FOR INSERT WITH CHECK (true);
+CREATE POLICY "Public Select Order Items" ON public.order_items FOR SELECT USING (true);
+
+CREATE POLICY "Allow All Settings" ON public.settings FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Categories" ON public.categories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Subcategories" ON public.subcategories FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Products" ON public.products FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Product Variants" ON public.product_variants FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Launch Soon" ON public.launch_soon FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Banners" ON public.banners FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Homepage Sections" ON public.homepage_sections FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Customers" ON public.customers FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Orders" ON public.orders FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Order Items" ON public.order_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Coupons" ON public.coupons FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Wishlist" ON public.wishlist_items FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Audit Logs" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Slug Redirects" ON public.slug_redirects FOR ALL USING (true) WITH CHECK (true);
+
+-- ====================================================================
+-- TRIGGERS & FUNCTIONS
+-- ====================================================================
+
+CREATE OR REPLACE FUNCTION public.handle_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tr_products_updated_at
+  BEFORE UPDATE ON public.products
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+
+CREATE TRIGGER tr_orders_updated_at
+  BEFORE UPDATE ON public.orders
+  FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+`;
+
+    return {
+      success: true,
+      sql: fallbackSql,
+      source: 'schema_template',
+      tablesCount: 15,
+      databaseUrl: cleanHost,
+      timestamp,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `Failed to generate schema from connected database: ${err?.message || String(err)}`,
+    };
+  }
+}
+

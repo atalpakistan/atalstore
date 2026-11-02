@@ -31,6 +31,7 @@ import {
   createOrderInSupabase,
   updateStaffPasswordInSupabase,
   uploadImageToSupabaseStorage,
+  generateLiveDatabaseSchema,
 } from './supabaseStore.js';
 
 export const router = express.Router();
@@ -1253,14 +1254,19 @@ router.get('/admin/db-status', requireAdmin, async (req, res) => {
   }
 });
 
-router.get('/admin/supabase-schema', requireAdmin, (req, res) => {
+router.get('/admin/supabase-schema', requireAdmin, async (req, res) => {
   try {
+    const resData = await generateLiveDatabaseSchema();
+    if (resData.success) {
+      return res.json(resData);
+    }
+    // Fallback to local schema file if generate failed
     const schemaPath = path.join(process.cwd(), 'supabase_schema.sql');
     if (fs.existsSync(schemaPath)) {
       const sql = fs.readFileSync(schemaPath, 'utf8');
-      return res.json({ success: true, sql });
+      return res.json({ success: true, sql, source: 'schema_file' });
     }
-    return res.status(404).json({ error: 'Schema file not found' });
+    return res.status(500).json({ error: resData.error || 'Failed to generate schema from connected database' });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }

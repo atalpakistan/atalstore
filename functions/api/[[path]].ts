@@ -27,6 +27,7 @@ import {
   fetchStaffFromSupabase,
   updateStaffPasswordInSupabase,
   uploadImageToSupabaseStorage,
+  generateLiveDatabaseSchema,
 } from '../../src/server/supabaseStore.js';
 
 // Cloudflare Pages Wildcard Function for all /api/* routes
@@ -408,11 +409,11 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     }
 
     if (endpoint === 'admin/supabase-schema' && request.method === 'GET') {
-      return jsonResponse({
-        success: true,
-        projectUrl: 'https://eiufrljvgyswhvclfajs.supabase.co',
-        sqlUrl: 'https://supabase.com/dashboard/project/eiufrljvgyswhvclfajs/sql/new',
-      });
+      const schemaRes = await generateLiveDatabaseSchema(env);
+      if (schemaRes.success) {
+        return jsonResponse(schemaRes);
+      }
+      return jsonResponse({ error: schemaRes.error || 'Failed to generate schema from connected database' }, 500);
     }
 
     if (endpoint === 'admin/supabase-sync-all' && request.method === 'POST') {

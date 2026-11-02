@@ -251,6 +251,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [checkingDbStatus, setCheckingDbStatus] = useState(false);
   const [copyingSchema, setCopyingSchema] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
+  const [showDbSetupModal, setShowDbSetupModal] = useState(false);
+  const [schemaSqlText, setSchemaSqlText] = useState<string>('');
+  const [schemaLoading, setSchemaLoading] = useState<boolean>(false);
+  const [schemaError, setSchemaError] = useState<string | null>(null);
+  const [schemaSource, setSchemaSource] = useState<string>('');
+
+  const handleOpenDbSetupModal = async () => {
+    setShowDbSetupModal(true);
+    setSchemaError(null);
+    if (!schemaSqlText) {
+      setSchemaLoading(true);
+      const { ok, data, error } = await safeFetchJson<any>('/api/admin/supabase-schema', { headers: authHeaders });
+      setSchemaLoading(false);
+      if (ok && data?.sql) {
+        setSchemaSqlText(data.sql);
+        setSchemaSource(data.source || 'live_introspected');
+      } else {
+        setSchemaError(error || 'Schema access is currently unavailable from the connected Supabase database.');
+      }
+    }
+  };
 
   const fetchDbStatus = async () => {
     setCheckingDbStatus(true);
@@ -264,17 +285,54 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleCopySupabaseSchema = async () => {
     setCopyingSchema(true);
     try {
-      const { ok, data, error } = await safeFetchJson<any>('/api/admin/supabase-schema', { headers: authHeaders });
-      if (ok && data?.sql) {
-        await navigator.clipboard.writeText(data.sql);
-        showFeedback('Supabase SQL Schema copied to clipboard! Paste it into Supabase SQL Editor.', 'success');
-      } else {
-        showFeedback(error || 'Failed to copy schema', 'error');
+      let sqlText = schemaSqlText;
+      if (!sqlText) {
+        const { ok, data, error } = await safeFetchJson<any>('/api/admin/supabase-schema', { headers: authHeaders });
+        if (ok && data?.sql) {
+          sqlText = data.sql;
+          setSchemaSqlText(data.sql);
+          setSchemaSource(data.source || 'live_introspected');
+        } else {
+          showFeedback(error || 'Failed to fetch schema from database', 'error');
+          setCopyingSchema(false);
+          return;
+        }
       }
+      await navigator.clipboard.writeText(sqlText);
+      showFeedback('Supabase SQL Schema copied to clipboard!', 'success');
     } catch {
-      showFeedback('Failed to copy schema', 'error');
+      showFeedback('Failed to copy schema to clipboard', 'error');
     }
     setCopyingSchema(false);
+  };
+
+  const handleDownloadSchemaFile = async () => {
+    try {
+      let sqlText = schemaSqlText;
+      if (!sqlText) {
+        const { ok, data, error } = await safeFetchJson<any>('/api/admin/supabase-schema', { headers: authHeaders });
+        if (ok && data?.sql) {
+          sqlText = data.sql;
+          setSchemaSqlText(data.sql);
+          setSchemaSource(data.source || 'live_introspected');
+        } else {
+          showFeedback(error || 'Failed to fetch database schema for download', 'error');
+          return;
+        }
+      }
+      const blob = new Blob([sqlText], { type: 'text/plain;charset=utf-8' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = 'schema.sql';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+      showFeedback('schema.sql file downloaded successfully!', 'success');
+    } catch (err: any) {
+      showFeedback(`Download error: ${err.message}`, 'error');
+    }
   };
 
   const handleSyncAllToSupabase = async () => {
@@ -958,16 +1016,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-xs">
+        <div className="flex items-center gap-2 text-xs">
+          <button
+            onClick={handleCopySupabaseSchema}
+            disabled={copyingSchema}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold rounded-lg shadow-sm transition"
+            title="Copy generated SQL schema from connected Supabase database"
+          >
+            <Copy className="w-3.5 h-3.5" />
+            <span>{copyingSchema ? 'Copying...' : 'Copy SQL Schema'}</span>
+          </button>
+          <button
+            onClick={handleOpenDbSetupModal}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-900 hover:bg-emerald-800 text-amber-200 font-medium rounded-lg border border-emerald-700 transition"
+            title="View database schema, tables & required data"
+          >
+            <Database className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Schema Inspector</span>
+          </button>
           <button
             onClick={onBackToStore}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-900/90 hover:bg-emerald-800 text-amber-300 font-semibold rounded-lg border border-amber-400/30 transition"
           >
             <ExternalLink className="w-3.5 h-3.5" />
-            <span>Storefront</span>
+            <span className="hidden md:inline">Storefront</span>
           </button>
           <span className="text-emerald-400 hidden sm:inline">|</span>
-          <span className="text-slate-300 hidden sm:inline">{user?.email}</span>
+          <span className="text-slate-300 hidden lg:inline">{user?.email}</span>
           <button
             onClick={logout}
             className="text-red-400 hover:text-red-300 transition"
@@ -992,17 +1067,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
-                onClick={handleCopySupabaseSchema}
-                disabled={copyingSchema}
+                onClick={handleOpenDbSetupModal}
                 className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-emerald-950 rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition"
               >
-                <span>{copyingSchema ? 'Copying...' : '📋 Copy SQL Schema'}</span>
+                <span>🚀 Setup Guide & Required Data</span>
+              </button>
+              <button
+                onClick={handleCopySupabaseSchema}
+                disabled={copyingSchema}
+                className="px-2.5 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-amber-200 border border-amber-400/30 rounded-lg font-semibold text-xs flex items-center gap-1.5 transition"
+              >
+                <span>{copyingSchema ? 'Copying...' : '📋 Copy SQL'}</span>
               </button>
               <a
                 href="https://supabase.com/dashboard/project/eiufrljvgyswhvclfajs/sql/new"
                 target="_blank"
                 rel="noreferrer"
-                className="px-3 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg font-medium text-xs flex items-center gap-1 transition"
+                className="px-2.5 py-1.5 bg-emerald-800 hover:bg-emerald-700 text-white rounded-lg font-medium text-xs flex items-center gap-1 transition"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Open SQL Editor</span>
@@ -3464,6 +3545,250 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               >
                 {resettingDefaults ? 'Resetting...' : 'Yes, Reset Passwords'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Database Setup & Required Data Modal */}
+      {showDbSetupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-[#062819] via-[#093824] to-[#0d4f33] text-white flex items-center justify-between shrink-0 border-b border-emerald-900">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-400/20 text-amber-300 flex items-center justify-center border border-amber-400/30 shadow-inner">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg font-bold text-amber-300 flex items-center gap-2">
+                    <span>Database Setup & SQL Schema Inspector</span>
+                    {schemaSource && (
+                      <span className="text-[10px] font-mono bg-emerald-900/90 text-emerald-200 px-2 py-0.5 rounded border border-emerald-700 font-semibold">
+                        {schemaSource === 'live_introspected' ? '⚡ Live Introspected' : '📄 PostgreSQL DDL Schema'}
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-xs text-emerald-200 mt-0.5">
+                    Connected Supabase Host: <code className="font-mono text-amber-200 font-semibold">eiufrljvgyswhvclfajs.supabase.co</code>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDbSetupModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-sm font-bold transition"
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Scrollable Content */}
+            <div className="p-5 sm:p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
+              {/* Error Message Alert */}
+              {schemaError && (
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-950 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-sm text-rose-900">Schema Access Error</h4>
+                    <p className="mt-1 text-slate-700 leading-relaxed">{schemaError}</p>
+                    <button
+                      onClick={handleOpenDbSetupModal}
+                      className="mt-2.5 px-3 py-1 bg-rose-600 text-white font-bold rounded-lg text-xs hover:bg-rose-700 transition"
+                    >
+                      Retry Schema Introspection
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Status Box */}
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200/80 text-amber-950 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-sm text-amber-900">Why is this SQL setup required?</h4>
+                  <p className="mt-1 text-slate-700 leading-relaxed">
+                    Your Supabase credentials and service role keys are verified and active. PostgreSQL requires table schemas (<code className="font-mono bg-amber-100 px-1 py-0.5 rounded">products</code>, <code className="font-mono bg-amber-100 px-1 py-0.5 rounded">orders</code>, <code className="font-mono bg-amber-100 px-1 py-0.5 rounded">categories</code>, etc.) before data can be saved. Executing this SQL schema creates all 15 tables, foreign keys, relationships, functions, and RLS security rules once in your Supabase project.
+                  </p>
+                </div>
+              </div>
+
+              {/* Top Quick Actions Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-100/90 rounded-2xl border border-slate-200">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleCopySupabaseSchema}
+                    disabled={copyingSchema || schemaLoading}
+                    className="px-3.5 py-2 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-1.5 transition disabled:opacity-50"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>{copyingSchema ? 'Copying...' : 'Copy SQL Schema'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopySupabaseSchema}
+                    disabled={copyingSchema || schemaLoading}
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold text-xs rounded-xl inline-flex items-center gap-1.5 transition disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Copy to Clipboard</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadSchemaFile}
+                    className="px-3.5 py-2 bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-1.5 transition"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download schema.sql</span>
+                  </button>
+                </div>
+
+                <a
+                  href="https://supabase.com/dashboard/project/eiufrljvgyswhvclfajs/sql/new"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3.5 py-2 bg-[#062819] hover:bg-[#093824] text-amber-300 font-bold text-xs rounded-xl shadow-sm inline-flex items-center gap-1.5 transition"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Supabase SQL Editor ↗</span>
+                </a>
+              </div>
+
+              {/* Readable SQL Code Textarea Display */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-xs">Generated SQL Schema Output:</span>
+                    {schemaSqlText && (
+                      <span className="text-[10px] text-slate-500 font-mono bg-slate-200 px-2 py-0.5 rounded">
+                        {schemaSqlText.split('\n').length} lines &bull; {Math.round(schemaSqlText.length / 1024)} KB
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleCopySupabaseSchema}
+                      disabled={copyingSchema}
+                      className="text-emerald-700 hover:text-emerald-900 font-bold text-xs inline-flex items-center gap-1"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Copy Code</span>
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      onClick={handleDownloadSchemaFile}
+                      className="text-emerald-700 hover:text-emerald-900 font-bold text-xs inline-flex items-center gap-1"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>Download</span>
+                    </button>
+                  </div>
+                </div>
+
+                {schemaLoading ? (
+                  <div className="w-full h-72 bg-slate-950 rounded-2xl flex flex-col items-center justify-center text-emerald-400 gap-3 border border-slate-800 font-mono">
+                    <RefreshCw className="w-6 h-6 animate-spin text-amber-400" />
+                    <span>Introspecting database structure from connected Supabase host...</span>
+                  </div>
+                ) : (
+                  <textarea
+                    readOnly
+                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                    value={schemaSqlText || '-- Click "Copy SQL Schema" or "Download schema.sql" above to view database code'}
+                    className="w-full h-80 font-mono text-[11px] p-4 bg-slate-950 text-emerald-300 rounded-2xl border border-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none selection:bg-amber-400 selection:text-slate-950"
+                  />
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5">
+                  💡 Tip: Click inside the box above to select all SQL code automatically, or click <strong>Copy SQL Schema</strong> to copy directly.
+                </p>
+              </div>
+
+              {/* What Data is Required */}
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600"></span>
+                  Connected Database Structure & Included Public Tables:
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                    <div className="font-bold text-slate-900 flex items-center justify-between">
+                      <span>1. products</span>
+                      <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Public Table</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      Columns: name, slug, SKU, brand, prices, stock, low_stock_threshold, images (JSONB), ratings, deal flags, timestamp triggers.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                    <div className="font-bold text-slate-900 flex items-center justify-between">
+                      <span>2. orders & order_items</span>
+                      <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Public Table</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      Columns: customer_name, phone, address, city, subtotal, shipping_fee, total_amount, payment_method, order_status, tracking, order_items foreign key relationship.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                    <div className="font-bold text-slate-900 flex items-center justify-between">
+                      <span>3. categories & subcategories</span>
+                      <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Public Table</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      Columns: category id, name, slug, icon, image, subcategories cascade foreign key constraint.
+                    </p>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                    <div className="font-bold text-slate-900 flex items-center justify-between">
+                      <span>4. settings</span>
+                      <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Public Table</span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-1">
+                      Columns: key (PK), value text, updated_at timestamp. Stores store config, logos, payment account numbers & QR URLs.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowDbSetupModal(false)}
+                className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Close
+              </button>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopySupabaseSchema}
+                  disabled={copyingSchema}
+                  className="px-4 py-2 bg-amber-400 hover:bg-amber-300 text-emerald-950 font-bold text-xs rounded-xl shadow-sm transition"
+                >
+                  {copyingSchema ? 'Copying...' : 'Copy SQL Schema'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadSchemaFile}
+                  className="px-4 py-2 bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download schema.sql</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSyncAllToSupabase}
+                  disabled={syncingAll}
+                  className="px-4 py-2 bg-[#062819] hover:bg-[#093824] text-amber-300 font-bold text-xs rounded-xl shadow-sm transition"
+                >
+                  {syncingAll ? 'Syncing...' : '⚡ Seed Store Data'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
