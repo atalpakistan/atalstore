@@ -1,4 +1,6 @@
 // Cloudflare Pages Function for /api/auth/register
+import { getSupabaseClient, isSupabaseConfigured } from '../../../src/server/supabaseStore.js';
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -16,11 +18,26 @@ function jsonResponse(data: any, status = 200, headers: Record<string, string> =
   });
 }
 
+async function computeHmacSha256(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode('atal_salt_2026_pk');
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(password));
+  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export const onRequestOptions = async () => {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 };
 
-export const onRequestPost = async ({ request }: { request: Request }) => {
+export const onRequestPost = async (context: { request: Request; env?: any }) => {
+  const { request, env } = context;
   try {
     const body: any = await request.json().catch(() => ({}));
     const { full_name, email, password, confirm_password, phone } = body || {};
@@ -41,6 +58,32 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
 
     const cleanEmail = String(email).trim().toLowerCase();
     const id = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const passHash = await computeHmacSha256(String(password).trim());
+
+    if (isSupabaseConfigured(env)) {
+      const client = getSupabaseClient(env);
+      if (client) {
+        // Check if existing
+        const { data: existing } = await client.from('customers').select('id').eq('email', cleanEmail).maybeSingle();
+        if (existing) {
+          return jsonResponse({ error: 'An account with this email address already exists' }, 400);
+        }
+
+        const { error: insErr } = await client.from('customers').insert({
+          id,
+          email: cleanEmail,
+          password_hash: passHash,
+          full_name: String(full_name).trim(),
+          phone: cleanPhone,
+          role: 'customer',
+        });
+
+        if (insErr) {
+          return jsonResponse({ error: insErr.message || 'Failed to register customer account' }, 500);
+        }
+      }
+    }
+
     const user = {
       id,
       email: cleanEmail,
@@ -56,9 +99,10 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
   }
 };
 
-export const onRequest = async ({ request }: { request: Request }) => {
+export const onRequest = async (context: { request: Request; env?: any }) => {
+  const { request } = context;
   if (request.method === 'OPTIONS') return onRequestOptions();
-  if (request.method === 'POST') return onRequestPost({ request });
+  if (request.method === 'POST') return onRequestPost(context);
 
   return jsonResponse({ error: 'Method Not Allowed' }, 405, { Allow: 'POST, OPTIONS' });
 };

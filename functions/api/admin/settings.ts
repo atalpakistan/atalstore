@@ -167,20 +167,26 @@ export const onRequestPut = async (context: { request: Request; env?: any }) => 
     }
 
     const sanitizedUpdates = sanitizeAndValidateSettings(body);
-    if (isSupabaseConfigured(env)) {
-      await updateSettingsInSupabase(sanitizedUpdates, env);
+    if (!isSupabaseConfigured(env)) {
+      return jsonResponse({
+        error: 'Persistent database is not connected. In your Cloudflare Pages Dashboard, go to Settings -> Environment Variables, and add SUPABASE_URL and SUPABASE_ANON_KEY (or SUPABASE_SERVICE_ROLE_KEY).'
+      }, 503);
+    }
+
+    const sbRes = await updateSettingsInSupabase(sanitizedUpdates, env);
+    if (!sbRes.success) {
+      return jsonResponse({ error: sbRes.error || 'Failed to update settings in database' }, 500);
     }
 
     const current = getStoredSettings();
     for (const [key, value] of Object.entries(sanitizedUpdates)) {
       current[key] = value;
     }
-
     syncGlobalDataSettings(current);
 
     return jsonResponse({
       success: true,
-      message: 'Settings saved permanently.',
+      message: 'Settings saved permanently in Supabase database.',
       settings: current
     });
   } catch (err: any) {

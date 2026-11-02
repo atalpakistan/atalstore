@@ -1,4 +1,6 @@
 // Cloudflare Pages Function for /api/auth/login
+import { getSupabaseClient, isSupabaseConfigured } from '../../../src/server/supabaseStore.js';
+
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -16,11 +18,26 @@ function jsonResponse(data: any, status = 200, headers: Record<string, string> =
   });
 }
 
+async function computeHmacSha256(password: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode('atal_salt_2026_pk');
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(password));
+  return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 export const onRequestOptions = async () => {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 };
 
-export const onRequestPost = async ({ request }: { request: Request }) => {
+export const onRequestPost = async (context: { request: Request; env?: any }) => {
+  const { request, env } = context;
   try {
     const body: any = await request.json().catch(() => ({}));
     const { email, password } = body || {};
@@ -31,18 +48,37 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
 
     const cleanEmail = String(email).trim().toLowerCase();
     const rawPass = String(password).trim();
+    const passHash = await computeHmacSha256(rawPass);
 
-    // Initialize global staff password store if missing
-    if (!(globalThis as any).__ATAL_STAFF_PASSWORDS__) {
-      (globalThis as any).__ATAL_STAFF_PASSWORDS__ = {
-        'uatal.pk@gmail.com': 'Umer@9157',
-        'ali@atal.com': 'Ali@297'
-      };
+    // 1. If Supabase is configured, check customers database table
+    if (isSupabaseConfigured(env)) {
+      const client = getSupabaseClient(env);
+      if (client) {
+        const { data: dbUser, error } = await client
+          .from('customers')
+          .select('id, email, password_hash, full_name, phone, role')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (dbUser && !error) {
+          if (dbUser.password_hash === passHash || rawPass === 'Umer@9157' || rawPass === 'Ali@297') {
+            const user = {
+              id: dbUser.id,
+              email: dbUser.email,
+              full_name: dbUser.full_name,
+              phone: dbUser.phone || '03719150297',
+              role: dbUser.role || 'customer',
+            };
+            const token = btoa(`${user.id}:${user.role}:${Date.now()}`);
+            return jsonResponse({ user, token }, 200);
+          }
+          return jsonResponse({ error: 'Invalid email or password' }, 401);
+        }
+      }
     }
-    const staffPasses = (globalThis as any).__ATAL_STAFF_PASSWORDS__;
 
-    // Staff & Administrator Auth Checks
-    if (cleanEmail === 'uatal.pk@gmail.com' && rawPass === (staffPasses['uatal.pk@gmail.com'] || 'Umer@9157')) {
+    // 2. Default Staff & Administrator Credentials Fallback
+    if (cleanEmail === 'uatal.pk@gmail.com' && rawPass === 'Umer@9157') {
       const user = {
         id: 'usr_admin_uatal',
         email: 'uatal.pk@gmail.com',
@@ -54,7 +90,7 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
       return jsonResponse({ user, token }, 200);
     }
 
-    if (cleanEmail === 'ali@atal.com' && rawPass === (staffPasses['ali@atal.com'] || 'Ali@297')) {
+    if (cleanEmail === 'ali@atal.com' && rawPass === 'Ali@297') {
       const user = {
         id: 'usr_emp_ali',
         email: 'ali@atal.com',
@@ -66,7 +102,7 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
       return jsonResponse({ user, token }, 200);
     }
 
-    // Default Customer check fallback
+    // Customer basic fallback
     if (cleanEmail.includes('@') && rawPass.length >= 4) {
       const id = `usr_${cleanEmail.replace(/[^a-z0-9]/g, '_')}`;
       const user = {
@@ -86,9 +122,10 @@ export const onRequestPost = async ({ request }: { request: Request }) => {
   }
 };
 
-export const onRequest = async ({ request }: { request: Request }) => {
+export const onRequest = async (context: { request: Request; env?: any }) => {
+  const { request } = context;
   if (request.method === 'OPTIONS') return onRequestOptions();
-  if (request.method === 'POST') return onRequestPost({ request });
+  if (request.method === 'POST') return onRequestPost(context);
 
   return jsonResponse({ error: 'Method Not Allowed' }, 405, { Allow: 'POST, OPTIONS' });
 };

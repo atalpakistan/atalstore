@@ -1,5 +1,6 @@
 import {
   isSupabaseConfigured,
+  getSupabaseDiagnostics,
   fetchSettingsFromSupabase,
   updateSettingsInSupabase,
   fetchCategoriesFromSupabase,
@@ -14,9 +15,17 @@ import {
   deleteBannerInSupabase,
   fetchSectionsFromSupabase,
   saveSectionsInSupabase,
+  fetchLaunchSoonFromSupabase,
+  saveLaunchSoonInSupabase,
+  deleteLaunchSoonInSupabase,
+  fetchCouponsFromSupabase,
+  saveCouponInSupabase,
+  deleteCouponInSupabase,
   fetchOrdersFromSupabase,
   updateOrderStatusInSupabase,
   createOrderInSupabase,
+  fetchStaffFromSupabase,
+  updateStaffPasswordInSupabase,
   uploadImageToSupabaseStorage,
 } from '../../src/server/supabaseStore.js';
 
@@ -38,9 +47,9 @@ function jsonResponse(data: any, status = 200, headers: Record<string, string> =
   });
 }
 
-// Initial Default State
+// Initial Default Fallback Data (used when database is initializing or before first sync)
 const DEFAULT_SETTINGS: Record<string, any> = {
-  store_name: 'ATAL',
+  store_name: 'ATAL STORE',
   tagline: 'Smart Shop. Live Better',
   announcement_bar_text: '🇵🇰 Free Nationwide Delivery on orders above Rs. 9,999 | Rs. 290 Delivery Fee | 100% Genuine Guaranteed',
   announcement_bar_enabled: true,
@@ -97,74 +106,59 @@ const DEFAULT_BANNERS = [
   { id: 'ban_03', title: 'DAMASCUS ROSE & OUD COUTURE', subtitle: 'Pure essential elixirs and oriental fragrances distilled for royalty.', image_url: 'https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=1600&q=80', cta_text: 'Discover Perfumes', cta_url: '/category/cosmetics-perfume', display_order: 3, is_active: 1 },
 ];
 
-function getStoreState() {
-  if (!(globalThis as any).__ATAL_DATA__) {
-    (globalThis as any).__ATAL_DATA__ = {
-      settings: { ...DEFAULT_SETTINGS },
-      categories: [...DEFAULT_CATEGORIES],
-      products: [
-        {
-          id: 'prod_01',
-          name: 'Royal Oud & Amber Essence 50ml',
-          slug: 'royal-oud-amber-essence-50ml',
-          sku: 'ATAL-PERF-001',
-          brand: 'ATAL Couture',
-          category_id: 'cat_cosmetics',
-          short_description: 'Pure concentrated Arabian Oud infused with royal amber and damascus rose notes.',
-          description: 'Hand-blended artisanal oriental elixir with long-lasting projection (24+ hours). Ideal for special occasions and daily luxury.',
-          images: ['https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=800&q=80'],
-          purchase_price: 3500,
-          original_price: 7500,
-          sale_price: 5490,
-          currency: 'PKR',
-          available_stock: 25,
-          low_stock_threshold: 5,
-          rating: 4.9,
-          reviews_count: 18,
-          festive_deal: 1,
-          spotlight: 1,
-          new_launch: 1,
-          variants: []
-        },
-        {
-          id: 'prod_02',
-          name: 'ANC Pro Wireless Earbuds',
-          slug: 'anc-pro-wireless-earbuds',
-          sku: 'ATAL-ELEC-002',
-          brand: 'ATAL Audio',
-          category_id: 'cat_electronics',
-          short_description: '35dB Active Noise Cancellation with HD dual microphones and fast wireless charging.',
-          description: 'Experience deep bass and crystal clear calling. Designed for remote meetings, music lovers, and travel.',
-          images: ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80'],
-          purchase_price: 2800,
-          original_price: 6990,
-          sale_price: 4890,
-          currency: 'PKR',
-          available_stock: 14,
-          low_stock_threshold: 5,
-          rating: 4.8,
-          reviews_count: 32,
-          festive_deal: 1,
-          spotlight: 1,
-          new_launch: 0,
-          variants: []
-        }
-      ],
-      orders: [],
-      banners: [...DEFAULT_BANNERS],
-      homepage_sections: [...DEFAULT_HOMEPAGE_SECTIONS],
-      launch_soon: [],
-      coupons: [
-        { id: 'cp_welcome', code: 'ATAL10', discount_type: 'percentage', discount_value: 10, min_order_amount: 2000, usage_count: 0, is_active: 1 }
-      ],
-      staff: [
-        { id: 'usr_admin_uatal', email: 'uatal.pk@gmail.com', full_name: 'Umer (Administrator)', phone: '03719150297', role: 'admin' },
-        { id: 'usr_emp_ali', email: 'ali@atal.com', full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' }
-      ]
-    };
-  }
-  return (globalThis as any).__ATAL_DATA__;
-}
+const DEFAULT_PRODUCTS = [
+  {
+    id: 'prod_01',
+    name: 'Royal Oud & Amber Essence 50ml',
+    slug: 'royal-oud-amber-essence-50ml',
+    sku: 'ATAL-PERF-001',
+    brand: 'ATAL Couture',
+    category_id: 'cat_cosmetics',
+    short_description: 'Pure concentrated Arabian Oud infused with royal amber and damascus rose notes.',
+    description: 'Hand-blended artisanal oriental elixir with long-lasting projection (24+ hours). Ideal for special occasions and daily luxury.',
+    images: ['https://images.unsplash.com/photo-1592945403244-b3fbafd7f539?auto=format&fit=crop&w=800&q=80'],
+    purchase_price: 3500,
+    original_price: 7500,
+    sale_price: 5490,
+    currency: 'PKR',
+    available_stock: 25,
+    low_stock_threshold: 5,
+    rating: 4.9,
+    reviews_count: 18,
+    festive_deal: 1,
+    spotlight: 1,
+    new_launch: 1,
+    variants: [],
+  },
+  {
+    id: 'prod_02',
+    name: 'ANC Pro Wireless Earbuds',
+    slug: 'anc-pro-wireless-earbuds',
+    sku: 'ATAL-ELEC-002',
+    brand: 'ATAL Audio',
+    category_id: 'cat_electronics',
+    short_description: '35dB Active Noise Cancellation with HD dual microphones and fast wireless charging.',
+    description: 'Experience deep bass and crystal clear calling. Designed for remote meetings, music lovers, and travel.',
+    images: ['https://images.unsplash.com/photo-1505740420928-5e560c06d30e?auto=format&fit=crop&w=800&q=80'],
+    purchase_price: 2800,
+    original_price: 6990,
+    sale_price: 4890,
+    currency: 'PKR',
+    available_stock: 14,
+    low_stock_threshold: 5,
+    rating: 4.8,
+    reviews_count: 32,
+    festive_deal: 1,
+    spotlight: 1,
+    new_launch: 0,
+    variants: [],
+  },
+];
+
+const DEFAULT_STAFF = [
+  { id: 'usr_admin_uatal', email: 'uatal.pk@gmail.com', full_name: 'Umer (Administrator)', phone: '03719150297', role: 'admin' },
+  { id: 'usr_emp_ali', email: 'ali@atal.com', full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' },
+];
 
 function verifyAdmin(request: Request): boolean {
   const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
@@ -180,6 +174,9 @@ function verifyAdmin(request: Request): boolean {
   }
 }
 
+const DB_NOT_CONFIGURED_ERROR =
+  'Persistent database is not connected. In your Cloudflare Pages Dashboard, go to Settings -> Environment Variables, and add SUPABASE_URL and SUPABASE_ANON_KEY (or SUPABASE_SERVICE_ROLE_KEY). Then execute supabase_schema.sql in your Supabase SQL editor.';
+
 export const onRequest = async (context: { request: Request; params: { path?: string[] }; env?: any }) => {
   const { request, params, env } = context;
 
@@ -190,51 +187,62 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   const url = new URL(request.url);
   const pathParts = params.path || url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
   const endpoint = pathParts.join('/');
-  const state = getStoreState();
 
   // -------------------------------------------------------------
   // PUBLIC ENDPOINTS
   // -------------------------------------------------------------
 
-  // 1. /api/config
-  if (endpoint === 'config' && request.method === 'GET') {
+  // 1. /api/config & /api/settings
+  if ((endpoint === 'config' || endpoint === 'settings') && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
       const sbSettings = await fetchSettingsFromSupabase(env);
       if (sbSettings) return jsonResponse(sbSettings);
     }
-    return jsonResponse(state.settings);
+    return jsonResponse(DEFAULT_SETTINGS);
   }
 
   // 2. /api/homepage
   if (endpoint === 'homepage' && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
-      const settings = (await fetchSettingsFromSupabase(env)) || state.settings;
-      const sections = (await fetchSectionsFromSupabase(env)) || state.homepage_sections;
-      const banners = (await fetchBannersFromSupabase(env)) || state.banners;
-      const categories = (await fetchCategoriesFromSupabase(env)) || state.categories;
-      const products = (await fetchProductsFromSupabase(env)) || state.products;
+      const [settings, sections, banners, categories, products, launchSoon] = await Promise.all([
+        fetchSettingsFromSupabase(env),
+        fetchSectionsFromSupabase(env),
+        fetchBannersFromSupabase(env),
+        fetchCategoriesFromSupabase(env),
+        fetchProductsFromSupabase(env),
+        fetchLaunchSoonFromSupabase(env),
+      ]);
+
+      const resolvedSettings = settings || DEFAULT_SETTINGS;
+      const resolvedSections = sections && sections.length > 0 ? sections : DEFAULT_HOMEPAGE_SECTIONS;
+      const resolvedBanners = banners && banners.length > 0 ? banners : DEFAULT_BANNERS;
+      const resolvedCategories = categories && categories.length > 0 ? categories : DEFAULT_CATEGORIES;
+      const resolvedProducts = products && products.length > 0 ? products : DEFAULT_PRODUCTS;
+      const resolvedLaunchSoon = launchSoon || [];
+
       return jsonResponse({
-        settings,
-        sections,
-        banners,
-        categories,
-        festive_deals: products.filter((p: any) => p.festive_deal === 1),
-        spotlight_products: products.filter((p: any) => p.spotlight === 1),
-        new_launches: products.filter((p: any) => p.new_launch === 1),
-        launch_soon: state.launch_soon,
-        catalog_sample: products.slice(0, 12),
+        settings: resolvedSettings,
+        sections: resolvedSections,
+        banners: resolvedBanners,
+        categories: resolvedCategories,
+        festive_deals: resolvedProducts.filter((p: any) => p.festive_deal === 1),
+        spotlight_products: resolvedProducts.filter((p: any) => p.spotlight === 1),
+        new_launches: resolvedProducts.filter((p: any) => p.new_launch === 1),
+        launch_soon: resolvedLaunchSoon,
+        catalog_sample: resolvedProducts.slice(0, 12),
       });
     }
+
     return jsonResponse({
-      settings: state.settings,
-      sections: state.homepage_sections,
-      banners: state.banners,
-      categories: state.categories,
-      festive_deals: state.products.filter((p: any) => p.festive_deal === 1),
-      spotlight_products: state.products.filter((p: any) => p.spotlight === 1),
-      new_launches: state.products.filter((p: any) => p.new_launch === 1),
-      launch_soon: state.launch_soon,
-      catalog_sample: state.products.slice(0, 12),
+      settings: DEFAULT_SETTINGS,
+      sections: DEFAULT_HOMEPAGE_SECTIONS,
+      banners: DEFAULT_BANNERS,
+      categories: DEFAULT_CATEGORIES,
+      festive_deals: DEFAULT_PRODUCTS.filter((p: any) => p.festive_deal === 1),
+      spotlight_products: DEFAULT_PRODUCTS.filter((p: any) => p.spotlight === 1),
+      new_launches: DEFAULT_PRODUCTS.filter((p: any) => p.new_launch === 1),
+      launch_soon: [],
+      catalog_sample: DEFAULT_PRODUCTS.slice(0, 12),
     });
   }
 
@@ -242,9 +250,9 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   if (endpoint === 'categories' && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
       const cats = await fetchCategoriesFromSupabase(env);
-      if (cats) return jsonResponse(cats);
+      if (cats && cats.length > 0) return jsonResponse(cats);
     }
-    return jsonResponse(state.categories);
+    return jsonResponse(DEFAULT_CATEGORIES);
   }
 
   // 4. /api/products
@@ -254,13 +262,13 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       if (prods) {
         return jsonResponse({
           products: prods,
-          pagination: { page: 1, limit: 50, total: prods.length, totalPages: 1 }
+          pagination: { page: 1, limit: 50, total: prods.length, totalPages: 1 },
         });
       }
     }
     return jsonResponse({
-      products: state.products,
-      pagination: { page: 1, limit: 50, total: state.products.length, totalPages: 1 }
+      products: DEFAULT_PRODUCTS,
+      pagination: { page: 1, limit: 50, total: DEFAULT_PRODUCTS.length, totalPages: 1 },
     });
   }
 
@@ -271,82 +279,40 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       const res = await fetchProductBySlugOrIdFromSupabase(slugOrId, env);
       if (res) return jsonResponse(res);
     }
-    const rawProduct = state.products.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
+    const rawProduct = DEFAULT_PRODUCTS.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
     if (!rawProduct) {
       return jsonResponse({ error: 'Product not found' }, 404);
     }
-    const product = {
-      ...rawProduct,
-      rating: typeof rawProduct.rating === 'number' && !isNaN(rawProduct.rating) ? rawProduct.rating : 5.0,
-      reviews_count: typeof rawProduct.reviews_count === 'number' && !isNaN(rawProduct.reviews_count) ? rawProduct.reviews_count : 0,
-      sale_price: typeof rawProduct.sale_price === 'number' && !isNaN(rawProduct.sale_price) ? rawProduct.sale_price : 0,
-      original_price: typeof rawProduct.original_price === 'number' && !isNaN(rawProduct.original_price) ? rawProduct.original_price : (rawProduct.sale_price || 0),
-      available_stock: typeof rawProduct.available_stock === 'number' ? rawProduct.available_stock : 10,
-      images: Array.isArray(rawProduct.images) && rawProduct.images.length > 0 ? rawProduct.images : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80']
-    };
-    const related = state.products
-      .filter((p: any) => p.id !== product.id)
-      .slice(0, 4)
-      .map((rp: any) => ({
-        ...rp,
-        rating: typeof rp.rating === 'number' && !isNaN(rp.rating) ? rp.rating : 5.0,
-        reviews_count: typeof rp.reviews_count === 'number' && !isNaN(rp.reviews_count) ? rp.reviews_count : 0,
-        sale_price: typeof rp.sale_price === 'number' && !isNaN(rp.sale_price) ? rp.sale_price : 0,
-      }));
-    return jsonResponse({ product, related });
+    const related = DEFAULT_PRODUCTS.filter((p: any) => p.id !== rawProduct.id).slice(0, 4);
+    return jsonResponse({ product: rawProduct, related });
   }
 
   // Place Order
   if (endpoint === 'orders' && request.method === 'POST') {
     try {
       const body = await request.json();
-      const cleanTxId = (body.transaction_id || body.transaction_ref || '').toString().trim();
-      const generatedOrderId = `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
-
-      if (isSupabaseConfigured(env)) {
-        const sbRes = await createOrderInSupabase({ ...body, id: generatedOrderId, transaction_id: cleanTxId, transaction_ref: cleanTxId }, env);
-        if (sbRes.success) return jsonResponse({ success: true, order: sbRes.order });
+      if (!isSupabaseConfigured(env)) {
+        return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
       }
-
-      const newOrder = {
-        id: generatedOrderId,
-        customer_name: body.customer_name || 'Customer',
-        phone: body.phone,
-        province: body.province || 'Punjab',
-        city: body.city || 'Lahore',
-        area: body.area || '',
-        street_address: body.street_address || '',
-        landmark: body.landmark || null,
-        subtotal: Number(body.subtotal || 0),
-        discount: Number(body.discount || 0),
-        shipping_fee: Number(body.shipping_fee || 290),
-        total_amount: Number(body.total_amount || body.subtotal || 0),
-        payment_method: body.payment_method || 'cod',
-        payment_status: 'pending',
-        order_status: 'Pending',
-        transaction_id: cleanTxId,
-        transaction_ref: cleanTxId,
-        created_at: new Date().toISOString(),
-        items: body.items || []
-      };
-      state.orders.unshift(newOrder);
-      return jsonResponse({ success: true, order: newOrder });
+      const sbRes = await createOrderInSupabase(body, env);
+      if (sbRes.success) {
+        return jsonResponse({ success: true, orderId: sbRes.order.id, order: sbRes.order });
+      }
+      return jsonResponse({ error: sbRes.error || 'Failed to place order in database' }, 400);
     } catch (err: any) {
-      return jsonResponse({ error: err?.message || 'Failed to place order' }, 400);
+      return jsonResponse({ error: err?.message || 'Failed to process order' }, 400);
     }
   }
 
   // Order Lookup by ID
   if (endpoint.startsWith('orders/') && request.method === 'GET' && !endpoint.startsWith('orders/track')) {
-    const orderId = endpoint.replace(/^orders\//, '').trim();
+    const orderId = endpoint.replace(/^orders\//, '').trim().toUpperCase();
     if (isSupabaseConfigured(env)) {
       const orders = await fetchOrdersFromSupabase(env);
-      const match = orders?.find((o: any) => o.id?.toUpperCase() === orderId.toUpperCase());
+      const match = orders?.find((o: any) => (o.id || '').toUpperCase() === orderId);
       if (match) return jsonResponse(match);
     }
-    const match = state.orders.find((o: any) => o.id?.toUpperCase() === orderId.toUpperCase());
-    if (match) return jsonResponse(match);
-    return jsonResponse({ error: 'Order not found' }, 404);
+    return jsonResponse({ error: `Order #${orderId} was not found in our database.` }, 404);
   }
 
   // Public Order Tracking
@@ -357,24 +323,29 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         return jsonResponse({ error: 'Please enter your Order Number or Courier Consignment Number.' }, 400);
       }
       const cleanInput = order_id.toString().trim().toUpperCase();
-      let ordersList = state.orders;
+      let ordersList: any[] = [];
       if (isSupabaseConfigured(env)) {
-        ordersList = (await fetchOrdersFromSupabase(env)) || state.orders;
+        ordersList = (await fetchOrdersFromSupabase(env)) || [];
       }
 
       const match = ordersList.find((o: any) => {
         const idUpper = (o.id || '').toUpperCase();
         const trkUpper = (o.tracking_number || '').toUpperCase();
         const txUpper = (o.transaction_id || o.transaction_ref || '').toUpperCase();
-        return idUpper === cleanInput ||
+        return (
+          idUpper === cleanInput ||
           idUpper === `ATL-${cleanInput}` ||
-          idUpper === `ATAL-${cleanInput}` ||
+          idUpper === cleanInput.replace(/^ATL-/, '') ||
           trkUpper === cleanInput ||
-          txUpper === cleanInput;
+          txUpper === cleanInput
+        );
       });
 
       if (!match) {
-        return jsonResponse({ error: `No active order found with identifier "${cleanInput}". Please check your order confirmation.` }, 404);
+        return jsonResponse(
+          { error: `No active order found with identifier "${cleanInput}". Please check your order confirmation.` },
+          404
+        );
       }
 
       if (phone && phone.toString().trim()) {
@@ -395,8 +366,24 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   if (endpoint === 'coupons/validate' && request.method === 'POST') {
     try {
       const { code, subtotal = 0 } = await request.json();
-      const cp = state.coupons.find((c: any) => c.code.toUpperCase() === String(code).toUpperCase() && c.is_active === 1);
+      if (!code) return jsonResponse({ error: 'Coupon code required' }, 400);
+
+      let couponsList: any[] = [];
+      if (isSupabaseConfigured(env)) {
+        couponsList = (await fetchCouponsFromSupabase(env)) || [];
+      } else {
+        couponsList = [{ id: 'cp_welcome', code: 'ATAL10', discount_type: 'percentage', discount_value: 10, min_order_amount: 2000, is_active: 1 }];
+      }
+
+      const cp = couponsList.find((c: any) => c.code.toUpperCase() === String(code).toUpperCase() && c.is_active === 1);
       if (!cp) return jsonResponse({ error: 'Invalid or expired coupon code' }, 404);
+
+      if (cp.min_order_amount && subtotal < cp.min_order_amount) {
+        return jsonResponse({
+          error: `This coupon requires a minimum order of Rs. ${cp.min_order_amount.toLocaleString('en-PK')}`,
+        }, 400);
+      }
+
       let discount = cp.discount_type === 'percentage' ? (subtotal * cp.discount_value) / 100 : cp.discount_value;
       discount = Math.min(discount, subtotal);
       return jsonResponse({ valid: true, code: cp.code, discount });
@@ -414,28 +401,52 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403);
     }
 
+    // Diagnostic Status Endpoint
+    if (endpoint === 'admin/db-status' && request.method === 'GET') {
+      const diag = await getSupabaseDiagnostics(env);
+      return jsonResponse(diag);
+    }
+
     // A. Metrics
     if (endpoint === 'admin/metrics' && request.method === 'GET') {
-      let ordersList = state.orders;
-      let productsList = state.products;
+      let ordersList: any[] = [];
+      let productsList: any[] = [];
+
       if (isSupabaseConfigured(env)) {
-        ordersList = (await fetchOrdersFromSupabase(env)) || state.orders;
-        productsList = (await fetchProductsFromSupabase(env)) || state.products;
+        ordersList = (await fetchOrdersFromSupabase(env)) || [];
+        productsList = (await fetchProductsFromSupabase(env)) || [];
+      } else {
+        productsList = DEFAULT_PRODUCTS;
       }
+
       const totalOrders = ordersList.length;
-      const totalSales = ordersList.reduce((sum: number, o: any) => sum + (o.total_amount || 0), 0);
+      const todayDateStr = new Date().toISOString().slice(0, 10);
+      let totalSales = 0;
+      let todaySales = 0;
+
+      for (const o of ordersList) {
+        if (o.order_status !== 'Cancelled') {
+          const amt = Number(o.total_amount || 0);
+          totalSales += amt;
+          const orderDate = (o.created_at || '').slice(0, 10);
+          if (orderDate === todayDateStr || !o.created_at) {
+            todaySales += amt;
+          }
+        }
+      }
+
       return jsonResponse({
         totalOrders,
-        todayOrders: totalOrders,
+        todayOrders: ordersList.filter((o: any) => (o.created_at || '').slice(0, 10) === todayDateStr).length,
         pendingOrders: ordersList.filter((o: any) => o.order_status === 'Pending').length,
-        processingOrders: ordersList.filter((o: any) => o.order_status === 'Processing').length,
-        shippedOrders: ordersList.filter((o: any) => o.order_status === 'Shipped').length,
+        processingOrders: ordersList.filter((o: any) => o.order_status === 'Processing' || o.order_status === 'Confirmed').length,
+        shippedOrders: ordersList.filter((o: any) => o.order_status === 'Shipped' || o.order_status === 'Ready to Ship').length,
         deliveredOrders: ordersList.filter((o: any) => o.order_status === 'Delivered').length,
         cancelledOrders: ordersList.filter((o: any) => o.order_status === 'Cancelled').length,
         totalSales,
-        todaySales: totalSales,
+        todaySales,
         lowStockProducts: productsList.filter((p: any) => (p.available_stock || 0) <= (p.low_stock_threshold || 5)),
-        recentOrders: ordersList.slice(0, 8)
+        recentOrders: ordersList.slice(0, 8),
       });
     }
 
@@ -446,92 +457,59 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           const prods = await fetchProductsFromSupabase(env);
           if (prods) return jsonResponse(prods);
         }
-        return jsonResponse(state.products);
+        return jsonResponse(DEFAULT_PRODUCTS);
       }
       if (request.method === 'POST') {
-        const body = await request.json().catch(() => ({}));
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveProductInSupabase(body, env);
-          if (sbRes.success) return jsonResponse(sbRes);
-          return jsonResponse({ error: sbRes.error || 'Failed to save product to database' }, 500);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const id = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        const rawSlug = (body.slug || body.name || 'product').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-        const slug = rawSlug || `product-${Date.now()}`;
-        const newProduct = {
-          brand: 'ATAL',
-          short_description: '',
-          description: '',
-          variants: [],
-          ...body,
-          id,
-          slug,
-          rating: typeof body.rating === 'number' && !isNaN(body.rating) ? body.rating : 5.0,
-          reviews_count: typeof body.reviews_count === 'number' && !isNaN(body.reviews_count) ? body.reviews_count : 0,
-          purchase_price: Number(body.purchase_price || 0),
-          sale_price: Number(body.sale_price || 0),
-          original_price: Number(body.original_price || body.sale_price || 0),
-          available_stock: Number(body.available_stock || 10),
-          low_stock_threshold: Number(body.low_stock_threshold || 5),
-          images: Array.isArray(body.images) && body.images.filter(Boolean).length > 0
-            ? body.images.filter(Boolean)
-            : ['https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=800&q=80'],
-          created_at: new Date().toISOString()
-        };
-        state.products.unshift(newProduct);
-        return jsonResponse({ success: true, id, slug });
+        const body = await request.json().catch(() => ({}));
+        const sbRes = await saveProductInSupabase(body, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to save product to database' }, 500);
       }
     }
 
     if (endpoint.startsWith('admin/products/')) {
       const sub = endpoint.replace('admin/products/', '');
+
+      // Duplicate
       if (sub.endsWith('/duplicate') && request.method === 'POST') {
-        const origId = sub.replace('/duplicate', '');
-        let orig = state.products.find((p: any) => p.id === origId);
-        if (isSupabaseConfigured(env)) {
-          const allProds = await fetchProductsFromSupabase(env);
-          if (allProds) orig = allProds.find((p: any) => p.id === origId);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
+        const origId = sub.replace('/duplicate', '');
+        const allProds = await fetchProductsFromSupabase(env);
+        const orig = allProds?.find((p: any) => p.id === origId);
         if (!orig) return jsonResponse({ error: 'Original product not found' }, 404);
-        const id = `prod_${Date.now()}`;
+
+        const id = `prod_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         const slug = `${orig.slug}-copy-${Date.now().toString().slice(-4)}`;
         const copy = { ...orig, id, slug, name: `${orig.name} (Copy)` };
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveProductInSupabase(copy, env);
-          if (sbRes.success) return jsonResponse(sbRes);
-        }
-        state.products.unshift(copy);
-        return jsonResponse({ success: true, id, slug });
+
+        const sbRes = await saveProductInSupabase(copy, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to duplicate product in database' }, 500);
       }
 
       const prodId = sub;
       if (request.method === 'PUT') {
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+        }
         const body = await request.json().catch(() => ({}));
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveProductInSupabase({ ...body, id: prodId }, env);
-          if (sbRes.success) return jsonResponse(sbRes);
-          return jsonResponse({ error: sbRes.error || 'Failed to update product in database' }, 500);
-        }
-        const index = state.products.findIndex((p: any) => p.id === prodId);
-        if (index >= 0) {
-          state.products[index] = { ...state.products[index], ...body, updated_at: new Date().toISOString() };
-          return jsonResponse({ success: true, slug: state.products[index].slug });
-        }
-        return jsonResponse({ error: 'Product not found' }, 404);
+        const sbRes = await saveProductInSupabase({ ...body, id: prodId }, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to update product in database' }, 500);
       }
 
       if (request.method === 'DELETE') {
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await deleteProductInSupabase(prodId, env);
-          if (sbRes.success) return jsonResponse({ success: true });
-          return jsonResponse({ error: sbRes.error || 'Failed to delete product from database' }, 500);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const index = state.products.findIndex((p: any) => p.id === prodId);
-        if (index >= 0) {
-          state.products.splice(index, 1);
-          return jsonResponse({ success: true });
-        }
-        return jsonResponse({ error: 'Product not found' }, 404);
+        const sbRes = await deleteProductInSupabase(prodId, env);
+        if (sbRes.success) return jsonResponse({ success: true });
+        return jsonResponse({ error: sbRes.error || 'Failed to delete product from database' }, 500);
       }
     }
 
@@ -542,78 +520,58 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           const cats = await fetchCategoriesFromSupabase(env);
           if (cats) return jsonResponse(cats);
         }
-        return jsonResponse(state.categories);
+        return jsonResponse(DEFAULT_CATEGORIES);
       }
       if (request.method === 'POST') {
-        const body = await request.json().catch(() => ({}));
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveCategoryInSupabase(body, env);
-          if (sbRes.success) return jsonResponse(sbRes);
-          return jsonResponse({ error: sbRes.error || 'Failed to save category to database' }, 500);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const id = `cat_${Date.now()}`;
-        const slug = (body.name || 'category').toLowerCase().replace(/[^a-z0-9]+/g, '-');
-        const cat = { ...body, id, slug };
-        state.categories.push(cat);
-        return jsonResponse({ success: true, id, slug });
+        const body = await request.json().catch(() => ({}));
+        const sbRes = await saveCategoryInSupabase(body, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to save category to database' }, 500);
       }
     }
 
     if (endpoint.startsWith('admin/categories/')) {
       const catId = endpoint.replace('admin/categories/', '');
       if (request.method === 'PUT') {
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+        }
         const body = await request.json().catch(() => ({}));
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveCategoryInSupabase({ ...body, id: catId }, env);
-          if (sbRes.success) return jsonResponse(sbRes);
-          return jsonResponse({ error: sbRes.error || 'Failed to update category' }, 500);
-        }
-        const idx = state.categories.findIndex((c: any) => c.id === catId);
-        if (idx >= 0) {
-          state.categories[idx] = { ...state.categories[idx], ...body };
-          return jsonResponse({ success: true, slug: state.categories[idx].slug });
-        }
-        return jsonResponse({ error: 'Category not found' }, 404);
+        const sbRes = await saveCategoryInSupabase({ ...body, id: catId }, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to update category in database' }, 500);
       }
       if (request.method === 'DELETE') {
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await deleteCategoryInSupabase(catId, env);
-          if (sbRes.success) return jsonResponse({ success: true });
-          return jsonResponse({ error: sbRes.error || 'Failed to delete category' }, 400);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const inUse = state.products.some((p: any) => p.category_id === catId);
-        if (inUse) {
-          return jsonResponse({ error: 'Cannot delete category: Contains assigned products.' }, 400);
-        }
-        const idx = state.categories.findIndex((c: any) => c.id === catId);
-        if (idx >= 0) state.categories.splice(idx, 1);
-        return jsonResponse({ success: true });
+        const sbRes = await deleteCategoryInSupabase(catId, env);
+        if (sbRes.success) return jsonResponse({ success: true });
+        return jsonResponse({ error: sbRes.error || 'Failed to delete category from database' }, 400);
       }
     }
 
     // D. Orders
-    if (endpoint === 'admin/orders') {
-      if (request.method === 'GET') {
-        if (isSupabaseConfigured(env)) {
-          const orders = await fetchOrdersFromSupabase(env);
-          if (orders) return jsonResponse(orders);
-        }
-        return jsonResponse(state.orders);
+    if (endpoint === 'admin/orders' && request.method === 'GET') {
+      if (isSupabaseConfigured(env)) {
+        const orders = await fetchOrdersFromSupabase(env);
+        if (orders) return jsonResponse(orders);
       }
+      return jsonResponse([]);
     }
+
     if (endpoint.startsWith('admin/orders/') && request.method === 'PUT') {
       const orderId = endpoint.replace('admin/orders/', '');
       const body = await request.json().catch(() => ({}));
-      if (isSupabaseConfigured(env)) {
-        const ok = await updateOrderStatusInSupabase(orderId, body, env);
-        if (ok) return jsonResponse({ success: true });
+      if (!isSupabaseConfigured(env)) {
+        return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
       }
-      const ord = state.orders.find((o: any) => o.id === orderId);
-      if (ord) {
-        Object.assign(ord, body);
-        return jsonResponse({ success: true });
-      }
-      return jsonResponse({ error: 'Order not found' }, 404);
+      const sbRes = await updateOrderStatusInSupabase(orderId, body, env);
+      if (sbRes.success) return jsonResponse({ success: true });
+      return jsonResponse({ error: sbRes.error || 'Failed to update order status in database' }, 500);
     }
 
     // E. Banners
@@ -623,39 +581,37 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           const banners = await fetchBannersFromSupabase(env);
           if (banners) return jsonResponse(banners);
         }
-        return jsonResponse(state.banners);
+        return jsonResponse(DEFAULT_BANNERS);
       }
       if (request.method === 'POST') {
-        const body = await request.json().catch(() => ({}));
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveBannerInSupabase(body, env);
-          if (sbRes.success) return jsonResponse(sbRes);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const id = `ban_${Date.now()}`;
-        state.banners.push({ ...body, id });
-        return jsonResponse({ success: true, id });
+        const body = await request.json().catch(() => ({}));
+        const sbRes = await saveBannerInSupabase(body, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to save banner' }, 500);
       }
     }
+
     if (endpoint.startsWith('admin/banners/')) {
       const banId = endpoint.replace('admin/banners/', '');
       if (request.method === 'PUT') {
-        const body = await request.json().catch(() => ({}));
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await saveBannerInSupabase({ ...body, id: banId }, env);
-          if (sbRes.success) return jsonResponse({ success: true });
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const idx = state.banners.findIndex((b: any) => b.id === banId);
-        if (idx >= 0) Object.assign(state.banners[idx], body);
-        return jsonResponse({ success: true });
+        const body = await request.json().catch(() => ({}));
+        const sbRes = await saveBannerInSupabase({ ...body, id: banId }, env);
+        if (sbRes.success) return jsonResponse({ success: true });
+        return jsonResponse({ error: sbRes.error || 'Failed to update banner' }, 500);
       }
       if (request.method === 'DELETE') {
-        if (isSupabaseConfigured(env)) {
-          const sbRes = await deleteBannerInSupabase(banId, env);
-          if (sbRes.success) return jsonResponse({ success: true });
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        const idx = state.banners.findIndex((b: any) => b.id === banId);
-        if (idx >= 0) state.banners.splice(idx, 1);
-        return jsonResponse({ success: true });
+        const sbRes = await deleteBannerInSupabase(banId, env);
+        if (sbRes.success) return jsonResponse({ success: true });
+        return jsonResponse({ error: sbRes.error || 'Failed to delete banner' }, 500);
       }
     }
 
@@ -664,62 +620,93 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       if (request.method === 'GET') {
         if (isSupabaseConfigured(env)) {
           const sections = await fetchSectionsFromSupabase(env);
-          if (sections) return jsonResponse(sections);
+          if (sections && sections.length > 0) return jsonResponse(sections);
         }
-        return jsonResponse(state.homepage_sections);
+        return jsonResponse(DEFAULT_HOMEPAGE_SECTIONS);
       }
       if (request.method === 'PUT') {
-        const { sections } = await request.json().catch(() => ({}));
-        if (Array.isArray(sections)) {
-          if (isSupabaseConfigured(env)) {
-            await saveSectionsInSupabase(sections, env);
-          }
-          state.homepage_sections = sections;
-          return jsonResponse({ success: true, message: 'Homepage sections updated.' });
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        return jsonResponse({ error: 'Sections array required' }, 400);
+        const { sections } = await request.json().catch(() => ({}));
+        if (!Array.isArray(sections)) {
+          return jsonResponse({ error: 'Sections array required' }, 400);
+        }
+        const sbRes = await saveSectionsInSupabase(sections, env);
+        if (sbRes.success) return jsonResponse({ success: true, message: 'Homepage sections updated permanently.' });
+        return jsonResponse({ error: sbRes.error || 'Failed to update sections' }, 500);
       }
     }
 
     // G. Launch Soon
     if (endpoint === 'admin/launch-soon') {
-      if (request.method === 'GET') return jsonResponse(state.launch_soon);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const items = await fetchLaunchSoonFromSupabase(env);
+          if (items) return jsonResponse(items);
+        }
+        return jsonResponse([]);
+      }
       if (request.method === 'POST') {
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+        }
         const body = await request.json().catch(() => ({}));
-        const id = `ls_${Date.now()}`;
-        state.launch_soon.push({ ...body, id });
-        return jsonResponse({ success: true, id });
+        const sbRes = await saveLaunchSoonInSupabase(body, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to save upcoming drop' }, 500);
       }
     }
+
     if (endpoint.startsWith('admin/launch-soon/')) {
       const lsId = endpoint.replace('admin/launch-soon/', '');
-      const idx = state.launch_soon.findIndex((l: any) => l.id === lsId);
       if (request.method === 'PUT') {
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+        }
         const body = await request.json().catch(() => ({}));
-        if (idx >= 0) Object.assign(state.launch_soon[idx], body);
-        return jsonResponse({ success: true });
+        const sbRes = await saveLaunchSoonInSupabase({ ...body, id: lsId }, env);
+        if (sbRes.success) return jsonResponse({ success: true });
+        return jsonResponse({ error: sbRes.error || 'Failed to update launch soon item' }, 500);
       }
       if (request.method === 'DELETE') {
-        if (idx >= 0) state.launch_soon.splice(idx, 1);
-        return jsonResponse({ success: true });
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+        }
+        const sbRes = await deleteLaunchSoonInSupabase(lsId, env);
+        if (sbRes.success) return jsonResponse({ success: true });
+        return jsonResponse({ error: sbRes.error || 'Failed to delete launch soon item' }, 500);
       }
     }
 
     // H. Coupons
     if (endpoint === 'admin/coupons') {
-      if (request.method === 'GET') return jsonResponse(state.coupons);
+      if (request.method === 'GET') {
+        if (isSupabaseConfigured(env)) {
+          const cps = await fetchCouponsFromSupabase(env);
+          if (cps) return jsonResponse(cps);
+        }
+        return jsonResponse([{ id: 'cp_welcome', code: 'ATAL10', discount_type: 'percentage', discount_value: 10, min_order_amount: 2000, usage_count: 0, is_active: 1 }]);
+      }
       if (request.method === 'POST') {
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+        }
         const body = await request.json().catch(() => ({}));
-        const id = `cp_${Date.now()}`;
-        state.coupons.push({ ...body, id, code: String(body.code).toUpperCase() });
-        return jsonResponse({ success: true, id });
+        const sbRes = await saveCouponInSupabase(body, env);
+        if (sbRes.success) return jsonResponse(sbRes);
+        return jsonResponse({ error: sbRes.error || 'Failed to save coupon' }, 500);
       }
     }
+
     if (endpoint.startsWith('admin/coupons/') && request.method === 'DELETE') {
       const cpId = endpoint.replace('admin/coupons/', '');
-      const idx = state.coupons.findIndex((c: any) => c.id === cpId);
-      if (idx >= 0) state.coupons.splice(idx, 1);
-      return jsonResponse({ success: true });
+      if (!isSupabaseConfigured(env)) {
+        return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+      }
+      const sbRes = await deleteCouponInSupabase(cpId, env);
+      if (sbRes.success) return jsonResponse({ success: true });
+      return jsonResponse({ error: sbRes.error || 'Failed to delete coupon' }, 500);
     }
 
     // I. Settings
@@ -729,28 +716,31 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           const sbSettings = await fetchSettingsFromSupabase(env);
           if (sbSettings) return jsonResponse(sbSettings);
         }
-        return jsonResponse(state.settings);
+        return jsonResponse(DEFAULT_SETTINGS);
       }
       if (request.method === 'PUT') {
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
           return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400);
         }
-        if (isSupabaseConfigured(env)) {
-          await updateSettingsInSupabase(body, env);
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        for (const [k, v] of Object.entries(body)) {
-          if (typeof k === 'string' && k.trim().length > 0) {
-            state.settings[k] = String(v ?? '');
-          }
+        const sbRes = await updateSettingsInSupabase(body, env);
+        if (sbRes.success) {
+          return jsonResponse({ success: true, message: 'Settings saved permanently in Supabase database.' });
         }
-        return jsonResponse({ success: true, message: 'Settings saved permanently.' });
+        return jsonResponse({ error: sbRes.error || 'Failed to save settings to database' }, 500);
       }
     }
 
     // J. Staff & Passwords
     if (endpoint === 'admin/staff' && request.method === 'GET') {
-      return jsonResponse(state.staff);
+      if (isSupabaseConfigured(env)) {
+        const staff = await fetchStaffFromSupabase(env);
+        if (staff && staff.length > 0) return jsonResponse(staff);
+      }
+      return jsonResponse(DEFAULT_STAFF);
     }
 
     if (endpoint === 'admin/staff/update-password' && request.method === 'POST') {
@@ -759,44 +749,60 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         if (!user_id || !new_password || String(new_password).trim().length < 4) {
           return jsonResponse({ error: 'Valid user ID and new password (min 4 characters) are required.' }, 400);
         }
-        const target = state.staff.find((s: any) => s.id === user_id);
-        if (!target) return jsonResponse({ error: 'Staff account not found' }, 404);
-
-        if (!(globalThis as any).__ATAL_STAFF_PASSWORDS__) {
-          (globalThis as any).__ATAL_STAFF_PASSWORDS__ = { 'uatal.pk@gmail.com': 'Umer@9157', 'ali@atal.com': 'Ali@297' };
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
-        (globalThis as any).__ATAL_STAFF_PASSWORDS__[target.email] = String(new_password).trim();
-        return jsonResponse({ success: true, message: `Password successfully updated for ${target.email}` });
+
+        // Web Crypto SHA-256 HMAC hash
+        const encoder = new TextEncoder();
+        const keyData = encoder.encode('atal_salt_2026_pk');
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw',
+          keyData,
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const signature = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(String(new_password).trim()));
+        const hashHex = Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const sbRes = await updateStaffPasswordInSupabase(user_id, hashHex, env);
+        if (sbRes.success) {
+          return jsonResponse({ success: true, message: 'Password successfully updated in Supabase database.' });
+        }
+        return jsonResponse({ error: sbRes.error || 'Failed to update staff password' }, 500);
       } catch (err: any) {
         return jsonResponse({ error: err?.message || 'Password update failed' }, 500);
       }
     }
 
-    if (endpoint === 'admin/staff/reset-defaults' && request.method === 'POST') {
-      (globalThis as any).__ATAL_STAFF_PASSWORDS__ = {
-        'uatal.pk@gmail.com': 'Umer@9157',
-        'ali@atal.com': 'Ali@297'
-      };
-      return jsonResponse({
-        success: true,
-        message: 'Default passwords restored: Admin (uatal.pk@gmail.com -> Umer@9157) & Employee (ali@atal.com -> Ali@297).'
-      });
-    }
-
     // K. Backup Export & Import
     if (endpoint === 'admin/backup/export' && request.method === 'GET') {
-      let currentSettings = state.settings;
-      let currentCategories = state.categories;
-      let currentProducts = state.products;
-      let currentBanners = state.banners;
-      let currentSections = state.homepage_sections;
+      let currentSettings = DEFAULT_SETTINGS;
+      let currentCategories = DEFAULT_CATEGORIES;
+      let currentProducts = DEFAULT_PRODUCTS;
+      let currentBanners = DEFAULT_BANNERS;
+      let currentSections = DEFAULT_HOMEPAGE_SECTIONS;
+      let currentLaunchSoon: any[] = [];
+      let currentCoupons: any[] = [];
 
       if (isSupabaseConfigured(env)) {
-        currentSettings = (await fetchSettingsFromSupabase(env)) || currentSettings;
-        currentCategories = (await fetchCategoriesFromSupabase(env)) || currentCategories;
-        currentProducts = (await fetchProductsFromSupabase(env)) || currentProducts;
-        currentBanners = (await fetchBannersFromSupabase(env)) || currentBanners;
-        currentSections = (await fetchSectionsFromSupabase(env)) || currentSections;
+        const [sbSet, sbCat, sbProd, sbBan, sbSec, sbLs, sbCp] = await Promise.all([
+          fetchSettingsFromSupabase(env),
+          fetchCategoriesFromSupabase(env),
+          fetchProductsFromSupabase(env),
+          fetchBannersFromSupabase(env),
+          fetchSectionsFromSupabase(env),
+          fetchLaunchSoonFromSupabase(env),
+          fetchCouponsFromSupabase(env),
+        ]);
+        if (sbSet) currentSettings = sbSet;
+        if (sbCat) currentCategories = sbCat;
+        if (sbProd) currentProducts = sbProd;
+        if (sbBan) currentBanners = sbBan;
+        if (sbSec) currentSections = sbSec;
+        if (sbLs) currentLaunchSoon = sbLs;
+        if (sbCp) currentCoupons = sbCp;
       }
 
       return jsonResponse({
@@ -808,8 +814,8 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         products: currentProducts,
         banners: currentBanners,
         homepage_sections: currentSections,
-        launch_soon: state.launch_soon,
-        coupons: state.coupons
+        launch_soon: currentLaunchSoon,
+        coupons: currentCoupons,
       });
     }
 
@@ -829,32 +835,26 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           return jsonResponse({ success: true, dryRun: true, preview, message: 'Backup validation passed. Ready to restore.' });
         }
 
-        if (isSupabaseConfigured(env)) {
-          if (Array.isArray(backupData.categories)) {
-            for (const cat of backupData.categories) await saveCategoryInSupabase(cat, env);
-          }
-          if (Array.isArray(backupData.products)) {
-            for (const p of backupData.products) await saveProductInSupabase(p, env);
-          }
-          if (Array.isArray(backupData.banners)) {
-            for (const b of backupData.banners) await saveBannerInSupabase(b, env);
-          }
-          if (Array.isArray(backupData.settings)) {
-            const setObj: Record<string, any> = {};
-            for (const s of backupData.settings) if (s.key) setObj[s.key] = s.value;
-            await updateSettingsInSupabase(setObj, env);
-          }
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
         }
 
-        if (Array.isArray(backupData.categories)) state.categories = backupData.categories;
-        if (Array.isArray(backupData.products)) state.products = backupData.products;
-        if (Array.isArray(backupData.banners)) state.banners = backupData.banners;
-        if (Array.isArray(backupData.settings)) {
-          for (const s of backupData.settings) {
-            if (s.key) state.settings[s.key] = String(s.value ?? '');
-          }
+        if (Array.isArray(backupData.categories)) {
+          for (const cat of backupData.categories) await saveCategoryInSupabase(cat, env);
         }
-        return jsonResponse({ success: true, message: 'Backup imported successfully.', recordsRestored: preview });
+        if (Array.isArray(backupData.products)) {
+          for (const p of backupData.products) await saveProductInSupabase(p, env);
+        }
+        if (Array.isArray(backupData.banners)) {
+          for (const b of backupData.banners) await saveBannerInSupabase(b, env);
+        }
+        if (Array.isArray(backupData.settings)) {
+          const setObj: Record<string, any> = {};
+          for (const s of backupData.settings) if (s.key) setObj[s.key] = s.value;
+          await updateSettingsInSupabase(setObj, env);
+        }
+
+        return jsonResponse({ success: true, message: 'Backup imported into Supabase database successfully.', recordsRestored: preview });
       } catch (err: any) {
         return jsonResponse({ error: `Import failed: ${err?.message}` }, 400);
       }

@@ -5,7 +5,7 @@ import {
   Settings, Download, Upload, Clock, Ticket, Shield, RefreshCw,
   Plus, Edit2, Trash2, Copy, Search, Check, AlertCircle, X,
   TrendingUp, Truck, CheckCircle2, AlertTriangle, ArrowLeft, ExternalLink,
-  KeyRound, Users, Lock, RotateCcw, CreditCard
+  KeyRound, Users, Lock, RotateCcw, CreditCard, Database
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -238,7 +238,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // 11. Database & Cloudflare Connection Status
+  const [dbStatus, setDbStatus] = useState<{
+    configured: boolean;
+    status: 'connected' | 'missing_config' | 'error';
+    url: string | null;
+    hasKey: boolean;
+    keyType: 'service_role' | 'anon' | 'none';
+    tables?: { settings: boolean; products: boolean; categories: boolean; orders: boolean };
+    error?: string;
+  } | null>(null);
+  const [checkingDbStatus, setCheckingDbStatus] = useState(false);
+
+  const fetchDbStatus = async () => {
+    setCheckingDbStatus(true);
+    const { ok, data } = await safeFetchJson<any>('/api/admin/db-status', { headers: authHeaders });
+    if (ok && data) {
+      setDbStatus(data);
+    }
+    setCheckingDbStatus(false);
+  };
+
   useEffect(() => {
+    fetchDbStatus();
     fetchMetrics();
     fetchProducts();
     fetchCategories();
@@ -870,6 +892,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               ATAL <span className="text-amber-300 font-normal text-xs uppercase px-2 py-0.5 bg-emerald-950 rounded border border-emerald-800">Admin Control</span>
             </h1>
           </div>
+
+          {/* Database Live Status Badge */}
+          {dbStatus && (
+            <div
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border ${
+                dbStatus.status === 'connected'
+                  ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/60'
+                  : 'bg-amber-950/80 text-amber-300 border-amber-700/60'
+              }`}
+              title={dbStatus.error || (dbStatus.status === 'connected' ? `Connected to Supabase (${dbStatus.url})` : 'Database not configured in Cloudflare')}
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>
+                {dbStatus.status === 'connected' ? (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block animate-pulse mr-1"></span>
+                    Database: Live ({dbStatus.url || 'Supabase'})
+                  </>
+                ) : (
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block mr-1"></span>
+                    Database: Setup Required
+                  </>
+                )}
+              </span>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3 text-xs">
@@ -890,6 +939,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </button>
         </div>
       </header>
+
+      {/* Cloudflare Pages Database Setup Alert */}
+      {dbStatus && dbStatus.status !== 'connected' && (
+        <div className="bg-amber-500/10 border-b border-amber-500/30 text-amber-950 px-4 py-2.5 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Cloudflare Pages Setup:</strong> To persist changes permanently across deployments and refreshes, configure <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">SUPABASE_URL</code> and <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">SUPABASE_ANON_KEY</code> (or <code className="bg-amber-100 px-1 py-0.5 rounded font-mono">SUPABASE_SERVICE_ROLE_KEY</code>) in Cloudflare Pages Settings &rarr; Environment Variables.
+            </span>
+          </div>
+          <button
+            onClick={fetchDbStatus}
+            disabled={checkingDbStatus}
+            className="px-2.5 py-1 bg-amber-200/80 hover:bg-amber-200 text-amber-900 rounded-md font-semibold text-[11px] shrink-0 flex items-center gap-1 transition"
+          >
+            <RefreshCw className={`w-3 h-3 ${checkingDbStatus ? 'animate-spin' : ''}`} />
+            <span>Check Status</span>
+          </button>
+        </div>
+      )}
 
       {/* Global Feedback Banner */}
       {feedbackMsg && (
@@ -1438,7 +1507,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
                         <div>
                           <label className="block font-semibold text-slate-700 mb-1">Sale Price (PKR) *</label>
                           <input
@@ -1459,13 +1528,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           />
                         </div>
                         <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Purchase Price (PKR)</label>
+                          <input
+                            type="number"
+                            value={editingProduct.purchase_price || ''}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, purchase_price: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            placeholder="Cost"
+                          />
+                        </div>
+                        <div>
                           <label className="block font-semibold text-slate-700 mb-1">Available Stock *</label>
                           <input
                             type="number"
                             required
                             value={editingProduct.available_stock || 0}
                             onChange={(e) => setEditingProduct({ ...editingProduct, available_stock: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Low Stock Alert Threshold</label>
+                          <input
+                            type="number"
+                            value={editingProduct.low_stock_threshold ?? 5}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, low_stock_threshold: Number(e.target.value) })}
                             className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block font-semibold text-slate-700 mb-1">Weight (kg)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={editingProduct.weight || ''}
+                            onChange={(e) => setEditingProduct({ ...editingProduct, weight: Number(e.target.value) })}
+                            className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                            placeholder="e.g. 0.5"
                           />
                         </div>
                       </div>
