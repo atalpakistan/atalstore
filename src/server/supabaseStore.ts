@@ -255,6 +255,29 @@ export async function saveCategoryInSupabase(
     console.error('Supabase saveCategory error:', error);
     return { success: false, error: error.message };
   }
+
+  // Handle subcategories
+  if (category.subcategories && Array.isArray(category.subcategories)) {
+    await client.from('subcategories').delete().eq('category_id', id);
+    if (category.subcategories.length > 0) {
+      const subRows = category.subcategories.map((sc: any, idx: number) => {
+        const scName = typeof sc === 'string' ? sc : sc.name || 'Subcategory';
+        const scSlug = typeof sc === 'object' && sc.slug
+          ? sc.slug
+          : scName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const scId = typeof sc === 'object' && sc.id ? sc.id : `sub_${id}_${idx + 1}`;
+        return {
+          id: scId,
+          category_id: id,
+          name: scName,
+          slug: scSlug || `sub-${Date.now()}-${idx}`,
+          display_order: typeof sc === 'object' && sc.display_order !== undefined ? Number(sc.display_order) : idx + 1,
+        };
+      });
+      await client.from('subcategories').insert(subRows);
+    }
+  }
+
   return { success: true, id, slug };
 }
 

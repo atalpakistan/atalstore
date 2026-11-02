@@ -114,6 +114,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     Authorization: `Bearer ${token}`
   };
 
+  const getImageFormat = (url?: string): string => {
+    if (!url || typeof url !== 'string' || !url.trim()) return 'N/A';
+    const clean = url.trim();
+    if (clean.startsWith('data:image/')) {
+      const mime = clean.split(';')[0].replace('data:image/', '').split('+')[0];
+      return mime.toUpperCase();
+    }
+    const cleanUrl = clean.split('?')[0].split('#')[0];
+    const ext = cleanUrl.split('.').pop()?.toLowerCase();
+    if (ext && ext.length <= 5 && /^[a-z0-9]+$/.test(ext)) {
+      if (ext === 'jpeg' || ext === 'jpg') return 'JPG';
+      return ext.toUpperCase();
+    }
+    return 'JPG/PNG';
+  };
+
   const showFeedback = (text: string, type: 'success' | 'error' = 'success') => {
     setFeedbackMsg({ text, type });
     setTimeout(() => setFeedbackMsg(null), 3500);
@@ -1527,11 +1543,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <tr key={p.id} className="hover:bg-slate-50/80 transition">
                           <td className="py-3 px-4">
                             <div className="flex items-center gap-3">
-                              <img
-                                src={p.images?.[0] || '/icon.svg'}
-                                alt={p.name}
-                                className="w-10 h-10 rounded-lg object-cover bg-slate-100 border border-slate-200"
-                              />
+                              <div className="relative shrink-0">
+                                <img
+                                  src={p.images?.[0] || '/icon.svg'}
+                                  alt={p.name}
+                                  className="w-11 h-11 rounded-lg object-cover bg-slate-100 border border-slate-200"
+                                />
+                                <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-slate-900/90 text-amber-300 font-mono font-bold text-[8px] rounded uppercase border border-amber-300/30 leading-none shadow-xs">
+                                  {getImageFormat(p.images?.[0])}
+                                </span>
+                              </div>
                               <div>
                                 <p className="font-semibold text-slate-900 line-clamp-1">{p.name}</p>
                                 <p className="text-[11px] text-slate-400 font-mono">SKU: {p.sku} | /{p.slug}</p>
@@ -1769,7 +1790,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <label className="block font-semibold text-slate-700 mb-1">Product Images (Upload at least 3) *</label>
                         <div className="space-y-2">
                           {[0, 1, 2].map((i) => (
-                            <div key={i} className="flex gap-2">
+                            <div key={i} className="flex gap-2 items-center">
                               <input
                                 type="text"
                                 required={i === 0}
@@ -1782,6 +1803,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                                 placeholder={`Image ${i + 1} URL`}
                               />
+                              {editingProduct.images?.[i] && (
+                                <span className="px-2 py-1 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-lg border border-amber-300/30 uppercase shrink-0">
+                                  Format: {getImageFormat(editingProduct.images[i])}
+                                </span>
+                              )}
                               <label className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-semibold flex items-center gap-1 shrink-0">
                                 <Upload className="w-3.5 h-3.5" />
                                 <input
@@ -1818,6 +1844,165 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                         />
+                      </div>
+
+                      {/* Optional Product Variations (Color, Size, Custom SKU, Price, Stock) */}
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-slate-800 text-xs block">
+                              Product Variations (Optional — Color, Size, Variant SKU, Price, Stock)
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              Add color swatches or size options for this product
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const curVars = Array.isArray(editingProduct.variants) ? [...editingProduct.variants] : [];
+                              curVars.push({
+                                id: `var_new_${Date.now()}_${curVars.length + 1}`,
+                                product_id: editingProduct.id || '',
+                                color_name: '',
+                                color_code: '#000000',
+                                size: '',
+                                sku: `${editingProduct.sku || 'SKU'}-V${curVars.length + 1}`,
+                                price: editingProduct.sale_price || 0,
+                                stock: editingProduct.available_stock || 10,
+                                image_url: '',
+                              });
+                              setEditingProduct({ ...editingProduct, variants: curVars });
+                            }}
+                            className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-[11px] rounded-lg transition flex items-center gap-1"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>Add Variation</span>
+                          </button>
+                        </div>
+
+                        {Array.isArray(editingProduct.variants) && editingProduct.variants.length > 0 ? (
+                          <div className="space-y-2.5 max-h-60 overflow-y-auto no-scrollbar pr-1">
+                            {editingProduct.variants.map((v, vIdx) => (
+                              <div key={v.id || vIdx} className="p-2.5 bg-white rounded-lg border border-slate-200 text-xs space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-bold text-slate-700 text-[11px]">Variant #{vIdx + 1}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const curVars = [...(editingProduct.variants || [])];
+                                      curVars.splice(vIdx, 1);
+                                      setEditingProduct({ ...editingProduct, variants: curVars });
+                                    }}
+                                    className="text-rose-600 hover:text-rose-800 p-1"
+                                    title="Remove Variant"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Color Name</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. Royal Black"
+                                      value={v.color_name || ''}
+                                      onChange={(e) => {
+                                        const curVars = [...(editingProduct.variants || [])];
+                                        curVars[vIdx] = { ...curVars[vIdx], color_name: e.target.value };
+                                        setEditingProduct({ ...editingProduct, variants: curVars });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Color Code (Hex)</label>
+                                    <div className="flex items-center gap-1">
+                                      <input
+                                        type="color"
+                                        value={v.color_code || '#000000'}
+                                        onChange={(e) => {
+                                          const curVars = [...(editingProduct.variants || [])];
+                                          curVars[vIdx] = { ...curVars[vIdx], color_code: e.target.value };
+                                          setEditingProduct({ ...editingProduct, variants: curVars });
+                                        }}
+                                        className="w-6 h-6 rounded cursor-pointer border-0 p-0"
+                                      />
+                                      <input
+                                        type="text"
+                                        placeholder="#000000"
+                                        value={v.color_code || ''}
+                                        onChange={(e) => {
+                                          const curVars = [...(editingProduct.variants || [])];
+                                          curVars[vIdx] = { ...curVars[vIdx], color_code: e.target.value };
+                                          setEditingProduct({ ...editingProduct, variants: curVars });
+                                        }}
+                                        className="flex-1 px-1.5 py-1 bg-slate-50 border border-slate-200 rounded text-[11px] font-mono"
+                                      />
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Size</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. Medium / XL / 50ml"
+                                      value={v.size || ''}
+                                      onChange={(e) => {
+                                        const curVars = [...(editingProduct.variants || [])];
+                                        curVars[vIdx] = { ...curVars[vIdx], size: e.target.value };
+                                        setEditingProduct({ ...editingProduct, variants: curVars });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Price (PKR)</label>
+                                    <input
+                                      type="number"
+                                      value={v.price || ''}
+                                      onChange={(e) => {
+                                        const curVars = [...(editingProduct.variants || [])];
+                                        curVars[vIdx] = { ...curVars[vIdx], price: Number(e.target.value) };
+                                        setEditingProduct({ ...editingProduct, variants: curVars });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold"
+                                    />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Variant SKU</label>
+                                    <input
+                                      type="text"
+                                      value={v.sku || ''}
+                                      onChange={(e) => {
+                                        const curVars = [...(editingProduct.variants || [])];
+                                        curVars[vIdx] = { ...curVars[vIdx], sku: e.target.value };
+                                        setEditingProduct({ ...editingProduct, variants: curVars });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-mono"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] text-slate-500 font-semibold mb-0.5">Stock Qty</label>
+                                    <input
+                                      type="number"
+                                      value={v.stock ?? 10}
+                                      onChange={(e) => {
+                                        const curVars = [...(editingProduct.variants || [])];
+                                        curVars[vIdx] = { ...curVars[vIdx], stock: Number(e.target.value) };
+                                        setEditingProduct({ ...editingProduct, variants: curVars });
+                                      }}
+                                      className="w-full px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic">No variations added. Product will be listed with standard single price and stock.</p>
+                        )}
                       </div>
 
                       {/* Homepage Assignments (Note: Prohibited product-level activate/deactivate toggle is omitted!) */}
@@ -1907,7 +2092,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div key={cat.id} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center gap-3">
-                        <img src={cat.image} alt={cat.name} className="w-12 h-12 rounded-full object-cover border-2 border-emerald-900" />
+                        <div className="relative shrink-0">
+                          <img src={cat.image} alt={cat.name} className="w-12 h-12 rounded-full object-cover border-2 border-emerald-900" />
+                          <span className="absolute -bottom-1 -right-1 px-1 py-0.2 bg-slate-900 text-amber-300 font-mono font-bold text-[8px] rounded uppercase border border-amber-300/30 leading-none shadow-xs">
+                            {getImageFormat(cat.image)}
+                          </span>
+                        </div>
                         <div>
                           <h4 className="font-bold text-slate-900 text-sm">{cat.name}</h4>
                           <span className="text-[11px] text-slate-400 font-mono">slug: /{cat.slug}</span>
@@ -1980,7 +2170,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
 
                       <div>
-                        <label className="block font-semibold text-slate-700 mb-1">Image URL or Upload *</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-semibold text-slate-700">Image URL or Upload *</label>
+                          {editingCategory.image && (
+                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30">
+                              Format: {getImageFormat(editingCategory.image)}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -2020,6 +2217,96 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           onChange={(e) => setEditingCategory({ ...editingCategory, display_order: Number(e.target.value) })}
                           className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"
                         />
+                      </div>
+
+                      {/* Subcategories Editor */}
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Subcategories (Nested Taxonomy)
+                        </label>
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl min-h-[42px] items-center">
+                            {Array.isArray(editingCategory.subcategories) && editingCategory.subcategories.length > 0 ? (
+                              editingCategory.subcategories.map((sub: any, sIdx: number) => {
+                                const subName = typeof sub === 'string' ? sub : sub.name;
+                                return (
+                                  <span
+                                    key={sub.id || sIdx}
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 shadow-xs"
+                                  >
+                                    <span>{subName}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const subs = [...(editingCategory.subcategories || [])];
+                                        subs.splice(sIdx, 1);
+                                        setEditingCategory({ ...editingCategory, subcategories: subs });
+                                      }}
+                                      className="text-slate-400 hover:text-rose-600 rounded p-0.5"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                );
+                              })
+                            ) : (
+                              <span className="text-slate-400 text-xs italic px-1">No subcategories added yet</span>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              id="newSubcategoryInput"
+                              placeholder="e.g. Formal Wear, Lawn, Earbuds..."
+                              className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const input = e.currentTarget;
+                                  const val = input.value.trim();
+                                  if (val) {
+                                    const subs = Array.isArray(editingCategory.subcategories) ? [...editingCategory.subcategories] : [];
+                                    subs.push({
+                                      id: `sub_${Date.now()}_${subs.length + 1}`,
+                                      category_id: editingCategory.id || '',
+                                      name: val,
+                                      slug: val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+                                      display_order: subs.length + 1,
+                                      created_at: new Date().toISOString(),
+                                    });
+                                    setEditingCategory({ ...editingCategory, subcategories: subs });
+                                    input.value = '';
+                                  }
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const input = document.getElementById('newSubcategoryInput') as HTMLInputElement;
+                                if (input && input.value.trim()) {
+                                  const val = input.value.trim();
+                                  const subs = Array.isArray(editingCategory.subcategories) ? [...editingCategory.subcategories] : [];
+                                  subs.push({
+                                    id: `sub_${Date.now()}_${subs.length + 1}`,
+                                    category_id: editingCategory.id || '',
+                                    name: val,
+                                    slug: val.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+                                    display_order: subs.length + 1,
+                                    created_at: new Date().toISOString(),
+                                  });
+                                  setEditingCategory({ ...editingCategory, subcategories: subs });
+                                  input.value = '';
+                                }
+                              }}
+                              className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold rounded-xl text-xs flex items-center gap-1"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Add</span>
+                            </button>
+                          </div>
+                        </div>
                       </div>
 
                       <div className="flex items-center justify-end gap-2 pt-3 border-t">
@@ -2643,8 +2930,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {banners.map((ban) => (
                   <div key={ban.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
-                    <div className="aspect-[16/9] bg-slate-100 overflow-hidden">
+                    <div className="aspect-[16/9] bg-slate-100 overflow-hidden relative">
                       <img src={ban.image_url} alt={ban.title} className="w-full h-full object-cover" />
+                      <span className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-amber-300 font-mono font-bold text-[10px] rounded-md uppercase border border-amber-300/30 shadow-xs">
+                        Format: {getImageFormat(ban.image_url)}
+                      </span>
                     </div>
                     <div className="p-4 space-y-2 text-xs flex flex-col justify-between flex-1">
                       <div>
@@ -2712,7 +3002,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block font-semibold text-slate-700 mb-1">Image URL or Upload *</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-semibold text-slate-700">Image URL or Upload *</label>
+                          {editingBanner.image_url && (
+                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30">
+                              Format: {getImageFormat(editingBanner.image_url)}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           <input
                             type="text"
@@ -2800,8 +3097,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {launchSoon.map((item) => (
                   <div key={item.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
-                    <div className="aspect-[16/10] bg-slate-100 overflow-hidden">
+                    <div className="aspect-[16/10] bg-slate-100 overflow-hidden relative">
                       <img src={item.image_url} alt={item.product_name} className="w-full h-full object-cover" />
+                      <span className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-amber-300 font-mono font-bold text-[10px] rounded-md uppercase border border-amber-300/30 shadow-xs">
+                        Format: {getImageFormat(item.image_url)}
+                      </span>
                     </div>
                     <div className="p-4 space-y-2 text-xs flex flex-col justify-between flex-1">
                       <div>
@@ -2861,7 +3161,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         />
                       </div>
                       <div>
-                        <label className="block font-semibold text-slate-700 mb-1">Image URL or Upload *</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block font-semibold text-slate-700">Image URL or Upload *</label>
+                          {editingLaunchSoon.image_url && (
+                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30">
+                              Format: {getImageFormat(editingLaunchSoon.image_url)}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex gap-2">
                           <input
                             type="text"

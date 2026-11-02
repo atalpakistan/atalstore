@@ -259,8 +259,28 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   // 4. /api/products
   if (endpoint === 'products' && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
-      const prods = await fetchProductsFromSupabase(env);
+      let prods = await fetchProductsFromSupabase(env);
       if (prods) {
+        const catQuery = url.searchParams.get('category');
+        const subQuery = url.searchParams.get('subcategory');
+        const searchQuery = url.searchParams.get('search');
+
+        if (catQuery) {
+          prods = prods.filter((p: any) => p.category_id === catQuery || p.category_slug === catQuery);
+        }
+        if (subQuery) {
+          prods = prods.filter((p: any) => p.subcategory_id === subQuery || p.subcategory_slug === subQuery);
+        }
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          prods = prods.filter((p: any) =>
+            p.name?.toLowerCase().includes(q) ||
+            p.brand?.toLowerCase().includes(q) ||
+            p.description?.toLowerCase().includes(q) ||
+            p.sku?.toLowerCase().includes(q)
+          );
+        }
+
         return jsonResponse({
           products: prods,
           pagination: { page: 1, limit: 50, total: prods.length, totalPages: 1 },

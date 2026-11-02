@@ -1668,7 +1668,7 @@ router.post('/admin/products/:id/duplicate', requireAdmin, async (req, res) => {
 // Admin Categories
 router.post('/admin/categories', requireAdmin, async (req, res) => {
   try {
-    const { name, icon, image, description, display_order } = req.body;
+    const { name, icon, image, description, display_order, subcategories } = req.body;
     if (!name) return res.status(400).json({ error: 'Category name required' });
 
     const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -1679,9 +1679,26 @@ router.post('/admin/categories', requireAdmin, async (req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(id, name, slug, icon || 'Folder', image || 'https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=600&q=80', description || '', Number(display_order || 0));
 
+    // Handle subcategories in SQLite
+    if (subcategories && Array.isArray(subcategories)) {
+      db.prepare('DELETE FROM subcategories WHERE category_id = ?').run(id);
+      const insSub = db.prepare(`
+        INSERT INTO subcategories (id, category_id, name, slug, display_order)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      subcategories.forEach((sc: any, idx: number) => {
+        const scName = typeof sc === 'string' ? sc : sc.name || 'Subcategory';
+        const scSlug = typeof sc === 'object' && sc.slug
+          ? sc.slug
+          : scName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const scId = typeof sc === 'object' && sc.id ? sc.id : `sub_${id}_${idx + 1}`;
+        insSub.run(scId, id, scName, scSlug || `sub-${idx}`, idx + 1);
+      });
+    }
+
     if (isSupabaseConfigured()) {
       try {
-        await saveCategoryInSupabase({ id, name, slug, icon, image, description, display_order });
+        await saveCategoryInSupabase({ id, name, slug, icon, image, description, display_order, subcategories });
       } catch (sbErr) {
         console.warn('Supabase category sync warning:', sbErr);
       }
@@ -1699,7 +1716,7 @@ router.put('/admin/categories/:id', requireAdmin, async (req, res) => {
     const existing = db.prepare('SELECT * FROM categories WHERE id = ?').get(id) as any;
     if (!existing) return res.status(404).json({ error: 'Category not found' });
 
-    const { name, icon, image, description, display_order } = req.body;
+    const { name, icon, image, description, display_order, subcategories } = req.body;
     const updatedName = name !== undefined ? name : existing.name;
     if (!updatedName) return res.status(400).json({ error: 'Category name required' });
 
@@ -1715,6 +1732,23 @@ router.put('/admin/categories/:id', requireAdmin, async (req, res) => {
       WHERE id = ?
     `).run(updatedName, slug, updatedIcon || 'Folder', updatedImage, updatedDescription, updatedDisplayOrder, id);
 
+    // Handle subcategories in SQLite
+    if (subcategories && Array.isArray(subcategories)) {
+      db.prepare('DELETE FROM subcategories WHERE category_id = ?').run(id);
+      const insSub = db.prepare(`
+        INSERT INTO subcategories (id, category_id, name, slug, display_order)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      subcategories.forEach((sc: any, idx: number) => {
+        const scName = typeof sc === 'string' ? sc : sc.name || 'Subcategory';
+        const scSlug = typeof sc === 'object' && sc.slug
+          ? sc.slug
+          : scName.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const scId = typeof sc === 'object' && sc.id ? sc.id : `sub_${id}_${idx + 1}`;
+        insSub.run(scId, id, scName, scSlug || `sub-${idx}`, idx + 1);
+      });
+    }
+
     if (isSupabaseConfigured()) {
       try {
         await saveCategoryInSupabase({
@@ -1724,7 +1758,8 @@ router.put('/admin/categories/:id', requireAdmin, async (req, res) => {
           icon: updatedIcon,
           image: updatedImage,
           description: updatedDescription,
-          display_order: updatedDisplayOrder
+          display_order: updatedDisplayOrder,
+          subcategories
         });
       } catch (sbErr) {
         console.warn('Supabase category update sync warning:', sbErr);
