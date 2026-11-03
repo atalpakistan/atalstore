@@ -336,6 +336,13 @@ export async function fetchProductsFromSupabase(envObj?: any): Promise<any[] | n
       p.category_name = p.categories.name;
       p.category_slug = p.categories.slug;
     }
+    if (p.subcategory_id) {
+      const { data: subData } = await client.from('subcategories').select('name, slug').eq('id', p.subcategory_id).maybeSingle();
+      if (subData) {
+        p.subcategory_name = subData.name;
+        p.subcategory_slug = subData.slug;
+      }
+    }
     if (typeof p.images === 'string') {
       try {
         p.images = JSON.parse(p.images);

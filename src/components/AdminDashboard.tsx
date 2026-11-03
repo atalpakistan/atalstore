@@ -447,6 +447,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  const handleQuickAddSubcategory = async (cat: Category, subName: string) => {
+    const cleanName = subName.trim();
+    if (!cleanName) return;
+    const currentSubs = Array.isArray(cat.subcategories) ? [...cat.subcategories] : [];
+    if (currentSubs.some(s => s.name.toLowerCase() === cleanName.toLowerCase())) {
+      showFeedback(`Subcategory "${cleanName}" already exists in ${cat.name}`, 'error');
+      return;
+    }
+    const newSub = {
+      id: `sub_${Date.now()}_${currentSubs.length + 1}`,
+      category_id: cat.id,
+      name: cleanName,
+      slug: cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      display_order: currentSubs.length + 1,
+      created_at: new Date().toISOString()
+    };
+    const updatedSubs = [...currentSubs, newSub];
+
+    const { ok, error } = await safeFetchJson(`/api/admin/categories/${cat.id}`, {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify({ ...cat, subcategories: updatedSubs })
+    });
+
+    if (ok) {
+      showFeedback(`Subcategory "${cleanName}" added to ${cat.name}!`);
+      fetchCategories();
+    } else {
+      showFeedback(error || 'Failed to add subcategory', 'error');
+    }
+  };
+
+  const handleQuickDeleteSubcategory = async (cat: Category, subIdOrName: string) => {
+    if (!confirm(`Delete subcategory from "${cat.name}"?`)) return;
+    const currentSubs = Array.isArray(cat.subcategories) ? [...cat.subcategories] : [];
+    const updatedSubs = currentSubs.filter(s => s.id !== subIdOrName && s.name !== subIdOrName);
+
+    const { ok, error } = await safeFetchJson(`/api/admin/categories/${cat.id}`, {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify({ ...cat, subcategories: updatedSubs })
+    });
+
+    if (ok) {
+      showFeedback(`Subcategory deleted from ${cat.name}`);
+      fetchCategories();
+    } else {
+      showFeedback(error || 'Failed to delete subcategory', 'error');
+    }
+  };
+
   // Banner Actions
   const handleSaveBanner = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2106,15 +2157,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <p className="text-xs text-slate-500 line-clamp-2 mt-2">{cat.description}</p>
 
-                      <div className="pt-2 mt-2 border-t border-slate-100">
-                        <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1.5">Subcategories:</span>
-                        <div className="flex flex-wrap gap-1">
-                          {cat.subcategories?.map((s) => (
-                            <span key={s.id} className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded">
-                              {s.name}
-                            </span>
-                          ))}
+                      <div className="pt-2.5 mt-2.5 border-t border-slate-100 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            Subcategories ({cat.subcategories?.length || 0})
+                          </span>
                         </div>
+
+                        <div className="flex flex-wrap gap-1.5 min-h-[28px] items-center">
+                          {cat.subcategories && cat.subcategories.length > 0 ? (
+                            cat.subcategories.map((s) => (
+                              <span
+                                key={s.id || s.name}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-800 px-2 py-0.5 rounded-lg border border-slate-200/80 transition"
+                              >
+                                <span>{s.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickDeleteSubcategory(cat, s.id || s.name)}
+                                  className="text-slate-400 hover:text-rose-600 rounded p-0.5 transition"
+                                  title={`Delete "${s.name}" from ${cat.name}`}
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">No subcategories yet</span>
+                          )}
+                        </div>
+
+                        {/* Quick Add Subcategory Input on Card */}
+                        <form
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            const form = e.currentTarget;
+                            const input = form.elements.namedItem(`card_sub_${cat.id}`) as HTMLInputElement;
+                            if (input && input.value.trim()) {
+                              handleQuickAddSubcategory(cat, input.value.trim());
+                              input.value = '';
+                            }
+                          }}
+                          className="flex gap-1.5 pt-1"
+                        >
+                          <input
+                            type="text"
+                            name={`card_sub_${cat.id}`}
+                            placeholder="+ Add subcategory..."
+                            className="flex-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:bg-white focus:outline-none focus:ring-1 focus:ring-[#093824]"
+                          />
+                          <button
+                            type="submit"
+                            className="px-2.5 py-1 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-[11px] rounded-lg transition shadow-xs shrink-0"
+                          >
+                            + Add
+                          </button>
+                        </form>
                       </div>
                     </div>
 
