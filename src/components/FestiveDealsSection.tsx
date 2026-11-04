@@ -33,60 +33,60 @@ export const FestiveDealsSection: React.FC<FestiveDealsSectionProps> = ({
   if (!products || products.length === 0) return null;
 
   return (
-    <section className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-7 bg-red-50/80 sm:rounded-3xl border-y sm:border border-red-200/70 my-4">
+    <section className="w-full max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-5 bg-gradient-to-r from-red-50/90 via-amber-50/40 to-red-50/90 sm:rounded-2xl border-y sm:border border-red-200/80 my-3 shadow-xs">
       {/* Section Header */}
-      <div className="flex items-end justify-between mb-5">
+      <div className="flex items-center justify-between mb-3.5">
         <div>
-          <div className="flex items-center gap-1.5 text-amber-700 text-xs font-bold uppercase tracking-wider mb-1">
-            <Zap className="w-4 h-4 fill-amber-500 text-amber-500" />
+          <div className="flex items-center gap-1 text-amber-700 text-[11px] font-bold uppercase tracking-wider mb-0.5">
+            <Zap className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
             <span>Limited Time Offers</span>
           </div>
-          <h2 className="font-display text-xl sm:text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
+          <h2 className="font-display text-base sm:text-lg lg:text-xl font-bold text-slate-900 tracking-tight">
             {title}
           </h2>
           {subtitle && (
-            <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-600 mt-0.5">
               {subtitle}
             </p>
           )}
         </div>
 
         {/* Desktop Carousel Controls */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {onViewAll && (
             <button
               onClick={onViewAll}
-              className="text-xs sm:text-sm font-semibold text-[#093824] hover:text-emerald-700 mr-2 transition"
+              className="text-xs font-bold text-[#093824] hover:text-emerald-700 mr-2 transition"
             >
-              View All Deals &rarr;
+              View All &rarr;
             </button>
           )}
           <button
             onClick={() => scroll('left')}
-            className="p-2 rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-[#093824] hover:text-white transition shadow-sm"
+            className="p-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-[#093824] hover:text-white transition shadow-xs"
             aria-label="Scroll left"
           >
-            <ChevronLeft className="w-4 h-4" />
+            <ChevronLeft className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => scroll('right')}
-            className="p-2 rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-[#093824] hover:text-white transition shadow-sm"
+            className="p-1.5 rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-[#093824] hover:text-white transition shadow-xs"
             aria-label="Scroll right"
           >
-            <ChevronRight className="w-4 h-4" />
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Horizontal Swipeable Row on Mobile (with peek-ahead neighboring cards) */}
+      {/* Horizontal Swipeable Row on Mobile (Compact sleek card sizing) */}
       <div
         ref={scrollRef}
-        className="flex gap-4 sm:gap-6 overflow-x-auto no-scrollbar pb-3 pt-1 snap-x snap-mandatory"
+        className="flex gap-3 sm:gap-4.5 overflow-x-auto no-scrollbar pb-2 pt-0.5 snap-x snap-mandatory"
       >
         {products.map((product) => (
           <div
             key={product.id}
-            className="w-[240px] sm:w-[270px] lg:w-[285px] flex-shrink-0 snap-start"
+            className="w-[185px] sm:w-[210px] lg:w-[225px] flex-shrink-0 snap-start"
           >
             <ProductCard product={product} onSelectProduct={onSelectProduct} />
           </div>

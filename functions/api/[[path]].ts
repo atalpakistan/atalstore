@@ -28,6 +28,10 @@ import {
   updateStaffPasswordInSupabase,
   uploadImageToSupabaseStorage,
   generateLiveDatabaseSchema,
+  fetchNotificationsFromSupabase,
+  markNotificationReadInSupabase,
+  markAllNotificationsReadInSupabase,
+  deleteNotificationInSupabase,
 } from '../../src/server/supabaseStore.js';
 
 // Cloudflare Pages Wildcard Function for all /api/* routes
@@ -426,6 +430,41 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     if (endpoint === 'admin/db-status' && request.method === 'GET') {
       const diag = await getSupabaseDiagnostics(env);
       return jsonResponse(diag);
+    }
+
+    // Notifications Endpoints
+    if (endpoint === 'admin/notifications' && request.method === 'GET') {
+      if (isSupabaseConfigured(env)) {
+        const notifs = await fetchNotificationsFromSupabase(env);
+        if (notifs) {
+          const unreadCount = notifs.filter((n: any) => !n.is_read).length;
+          return jsonResponse({ notifications: notifs, unreadCount });
+        }
+      }
+      return jsonResponse({ notifications: [], unreadCount: 0 });
+    }
+
+    if (endpoint === 'admin/notifications/read-all' && request.method === 'PUT') {
+      if (isSupabaseConfigured(env)) {
+        await markAllNotificationsReadInSupabase(env);
+      }
+      return jsonResponse({ success: true });
+    }
+
+    if (endpoint.startsWith('admin/notifications/') && request.method === 'PUT') {
+      const notifId = endpoint.replace('admin/notifications/', '').replace('/read', '');
+      if (isSupabaseConfigured(env)) {
+        await markNotificationReadInSupabase(notifId, env);
+      }
+      return jsonResponse({ success: true });
+    }
+
+    if (endpoint.startsWith('admin/notifications/') && request.method === 'DELETE') {
+      const notifId = endpoint.replace('admin/notifications/', '');
+      if (isSupabaseConfigured(env)) {
+        await deleteNotificationInSupabase(notifId, env);
+      }
+      return jsonResponse({ success: true });
     }
 
     if (endpoint === 'admin/supabase-schema' && request.method === 'GET') {

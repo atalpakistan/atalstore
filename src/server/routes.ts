@@ -32,6 +32,11 @@ import {
   updateStaffPasswordInSupabase,
   uploadImageToSupabaseStorage,
   generateLiveDatabaseSchema,
+  fetchNotificationsFromSupabase,
+  createNotificationInSupabase,
+  markNotificationReadInSupabase,
+  markAllNotificationsReadInSupabase,
+  deleteNotificationInSupabase,
 } from './supabaseStore.js';
 
 export const router = express.Router();
@@ -682,6 +687,43 @@ router.post('/orders', (req, res) => {
         insertItemStmt.run(it.id, orderId, it.product_id, it.product_name, it.variant_title, it.price, it.quantity, it.image_url, it.total);
       }
 
+      // Insert Order Notifications
+      try {
+        const notifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+        db.prepare(`
+          INSERT INTO notifications (id, type, title, message, link, entity_id)
+          VALUES (?, 'new_order', ?, ?, ?, ?)
+        `).run(
+          notifId,
+          `🛒 New Order #${orderId}`,
+          `New order of Rs. ${total_amount.toLocaleString('en-PK')} placed by ${customer_name} (${cleanPhone}).`,
+          `/admin/orders?order=${orderId}`,
+          orderId
+        );
+
+        // Check low stock triggers for each item
+        for (const it of orderItemsToInsert) {
+          if (it.product_id) {
+            const pInfo = db.prepare('SELECT id, name, sku, available_stock, low_stock_threshold FROM products WHERE id = ?').get(it.product_id) as any;
+            if (pInfo && pInfo.available_stock <= (pInfo.low_stock_threshold ?? 5)) {
+              const lNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+              db.prepare(`
+                INSERT INTO notifications (id, type, title, message, link, entity_id)
+                VALUES (?, 'low_stock', ?, ?, ?, ?)
+              `).run(
+                lNotifId,
+                `⚠️ Low Stock Alert: ${pInfo.name}`,
+                `Inventory for "${pInfo.name}" (${pInfo.sku}) dropped to ${pInfo.available_stock} units (Threshold: ${pInfo.low_stock_threshold ?? 5}).`,
+                `/admin/products?search=${encodeURIComponent(pInfo.sku || pInfo.name)}`,
+                pInfo.id
+              );
+            }
+          }
+        }
+      } catch (nErr) {
+        console.warn('Failed to insert SQLite notification:', nErr);
+      }
+
       // Record Audit
       db.prepare(`
         INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details)
@@ -1328,6 +1370,65 @@ router.post('/admin/supabase-sync-all', requireAdmin, async (req, res) => {
     });
   } catch (err: any) {
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// -------------------------------------------------------------
+// ADMIN NOTIFICATIONS SYSTEM ENDPOINTS
+// -------------------------------------------------------------
+
+router.get('/admin/notifications', requireAdmin, async (req, res) => {
+  try {
+    if (isSupabaseConfigured()) {
+      const sbNotifs = await fetchNotificationsFromSupabase();
+      if (sbNotifs) {
+        const unreadCount = sbNotifs.filter(n => !n.is_read).length;
+        return res.json({ notifications: sbNotifs, unreadCount });
+      }
+    }
+    const notifs = db.prepare('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100').all() as any[];
+    const unreadCount = (db.prepare('SELECT COUNT(*) as c FROM notifications WHERE is_read = 0').get() as { c: number }).c;
+    res.json({ notifications: notifs, unreadCount });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/admin/notifications/read-all', requireAdmin, async (req, res) => {
+  try {
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE is_read = 0').run();
+    if (isSupabaseConfigured()) {
+      try { await markAllNotificationsReadInSupabase(); } catch {}
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/admin/notifications/:id/read', requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    db.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').run(id);
+    if (isSupabaseConfigured()) {
+      try { await markNotificationReadInSupabase(id); } catch {}
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/admin/notifications/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = req.params.id;
+    db.prepare('DELETE FROM notifications WHERE id = ?').run(id);
+    if (isSupabaseConfigured()) {
+      try { await deleteNotificationInSupabase(id); } catch {}
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2398,3 +2499,5 @@ router.post('/admin/backup/import', requireAdmin, (req, res) => {
     res.status(400).json({ error: `Import failed: ${err.message}` });
   }
 });
+
+export default router;

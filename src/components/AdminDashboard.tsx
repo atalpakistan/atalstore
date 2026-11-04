@@ -5,7 +5,8 @@ import {
   Settings, Download, Upload, Clock, Ticket, Shield, RefreshCw,
   Plus, Edit2, Trash2, Copy, Search, Check, AlertCircle, X,
   TrendingUp, Truck, CheckCircle2, AlertTriangle, ArrowLeft, ExternalLink,
-  KeyRound, Users, Lock, RotateCcw, CreditCard, Database
+  KeyRound, Users, Lock, RotateCcw, CreditCard, Database,
+  Bell, BellRing, CheckCheck, Volume2, VolumeX, Inbox
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -30,6 +31,83 @@ type TabType =
   | 'settings'
   | 'staff'
   | 'backup';
+
+export const ImageMetaBadge: React.FC<{ url?: string; recommended?: string }> = ({ url, recommended }) => {
+  const [dim, setDim] = useState<{ w: number; h: number } | null>(null);
+  const [fileSizeStr, setFileSizeStr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!url || typeof url !== 'string' || !url.trim()) {
+      setDim(null);
+      setFileSizeStr(null);
+      return;
+    }
+
+    const clean = url.trim();
+
+    if (clean.startsWith('data:image/')) {
+      const approxBytes = Math.round((clean.length * 3) / 4);
+      if (approxBytes < 1024 * 1024) {
+        setFileSizeStr(`${(approxBytes / 1024).toFixed(0)} KB`);
+      } else {
+        setFileSizeStr(`${(approxBytes / (1024 * 1024)).toFixed(1)} MB`);
+      }
+    } else {
+      setFileSizeStr(null);
+    }
+
+    const img = new window.Image();
+    img.onload = () => {
+      setDim({ w: img.naturalWidth, h: img.naturalHeight });
+    };
+    img.onerror = () => {
+      setDim(null);
+    };
+    img.src = clean;
+  }, [url]);
+
+  if (!url || !url.trim()) {
+    if (recommended) {
+      return <span className="text-[10px] text-slate-400 font-medium">Rec: {recommended}</span>;
+    }
+    return null;
+  }
+
+  const getImageFormat = (u: string): string => {
+    const clean = u.trim();
+    if (clean.startsWith('data:image/')) {
+      const mime = clean.split(';')[0].replace('data:image/', '').split('+')[0];
+      return mime.toUpperCase();
+    }
+    const cleanUrl = clean.split('?')[0].split('#')[0];
+    const ext = cleanUrl.split('.').pop()?.toLowerCase();
+    if (ext && ext.length <= 5 && /^[a-z0-9]+$/.test(ext)) {
+      if (ext === 'jpeg' || ext === 'jpg') return 'JPG';
+      return ext.toUpperCase();
+    }
+    return 'JPG/PNG';
+  };
+
+  const format = getImageFormat(url);
+
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30 shrink-0 shadow-xs">
+      <span>{format}</span>
+      {dim && (
+        <>
+          <span className="text-slate-500">•</span>
+          <span className="text-amber-200">{dim.w}×{dim.h}px</span>
+        </>
+      )}
+      {fileSizeStr && (
+        <>
+          <span className="text-slate-500">•</span>
+          <span className="text-emerald-300">{fileSizeStr}</span>
+        </>
+      )}
+    </span>
+  );
+};
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBackToStore,
@@ -104,6 +182,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [resettingDefaults, setResettingDefaults] = useState<boolean>(false);
   const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
 
+  // Admin Notifications & Sound Alert State
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [isNotifPanelOpen, setIsNotifPanelOpen] = useState<boolean>(false);
+  const [notifFilter, setNotifFilter] = useState<'all' | 'unread' | 'new_order' | 'low_stock'>('all');
+  const [audioAlertsEnabled, setAudioAlertsEnabled] = useState<boolean>(true);
+  const [toastNotif, setToastNotif] = useState<any | null>(null);
+
   // Backup & Restore
   const [backupJson, setBackupJson] = useState('');
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -112,6 +198,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const authHeaders = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`
+  };
+
+  const playNotificationSound = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch {
+      // Audio fallback
+    }
+  };
+
+  const fetchNotifications = async () => {
+    const { ok, data } = await safeFetchJson<any>('/api/admin/notifications', { headers: authHeaders });
+    if (ok && data) {
+      const newNotifs = data.notifications || [];
+      const newUnread = data.unreadCount || 0;
+
+      // Toast banner & sound chime when new notification arrives
+      if (notifications.length > 0) {
+        const latestNew = newNotifs.find((n: any) => !n.is_read && !notifications.some((old: any) => old.id === n.id));
+        if (latestNew) {
+          setToastNotif(latestNew);
+          setTimeout(() => setToastNotif(null), 6500);
+          if (audioAlertsEnabled) {
+            playNotificationSound();
+          }
+        }
+      }
+
+      setNotifications(newNotifs);
+      setUnreadCount(newUnread);
+    }
+  };
+
+  const handleMarkNotifRead = async (notifId: string) => {
+    setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, is_read: 1 } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+    await safeFetchJson(`/api/admin/notifications/${notifId}/read`, { method: 'PUT', headers: authHeaders });
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
+    setUnreadCount(0);
+    showFeedback('All notifications marked as read');
+    await safeFetchJson('/api/admin/notifications/read-all', { method: 'PUT', headers: authHeaders });
+  };
+
+  const handleDeleteNotif = async (notifId: string) => {
+    const target = notifications.find(n => n.id === notifId);
+    setNotifications(prev => prev.filter(n => n.id !== notifId));
+    if (target && !target.is_read) {
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
+    await safeFetchJson(`/api/admin/notifications/${notifId}`, { method: 'DELETE', headers: authHeaders });
+  };
+
+  const handleNotifClick = (notif: any) => {
+    if (!notif.is_read) handleMarkNotifRead(notif.id);
+    setIsNotifPanelOpen(false);
+
+    if (notif.type === 'new_order' || notif.link?.includes('orders')) {
+      setActiveTab('orders');
+      if (notif.entity_id) {
+        setOrderSearch(notif.entity_id);
+      }
+    } else if (notif.type === 'low_stock' || notif.link?.includes('products')) {
+      setActiveTab('products');
+      if (notif.entity_id) {
+        setProductSearch(notif.entity_id);
+      }
+    }
   };
 
   const getImageFormat = (url?: string): string => {
@@ -382,6 +549,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     fetchCoupons();
     fetchSettings();
     fetchStaff();
+    fetchNotifications();
+
+    const notifTimer = setInterval(fetchNotifications, 10000);
+    return () => clearInterval(notifTimer);
   }, [activeTab]);
 
   // Image Upload Helper
@@ -1084,6 +1255,39 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         <div className="flex items-center gap-2 text-xs">
+          {/* Notification Bell with Badge */}
+          <div className="relative">
+            <button
+              onClick={() => setIsNotifPanelOpen(!isNotifPanelOpen)}
+              className="relative p-2 bg-emerald-900 hover:bg-emerald-800 text-amber-300 rounded-lg border border-emerald-700/80 transition flex items-center justify-center"
+              title="Store Alerts & Notifications"
+            >
+              {unreadCount > 0 ? (
+                <BellRing className="w-4 h-4 text-amber-400 animate-bounce" />
+              ) : (
+                <Bell className="w-4 h-4 text-emerald-300" />
+              )}
+              {unreadCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white font-bold text-[10px] min-w-5 h-5 px-1 rounded-full flex items-center justify-center shadow border-2 border-[#062819]">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Sound Alert Toggle Button */}
+          <button
+            onClick={() => setAudioAlertsEnabled(!audioAlertsEnabled)}
+            className={`p-2 rounded-lg border transition flex items-center justify-center ${
+              audioAlertsEnabled
+                ? 'bg-emerald-900/90 text-amber-300 border-emerald-700/80'
+                : 'bg-emerald-950 text-slate-400 border-emerald-900'
+            }`}
+            title={audioAlertsEnabled ? 'Sound alerts enabled' : 'Sound alerts muted'}
+          >
+            {audioAlertsEnabled ? <Volume2 className="w-4 h-4 text-amber-300" /> : <VolumeX className="w-4 h-4 text-slate-400" />}
+          </button>
+
           <button
             onClick={handleCopySupabaseSchema}
             disabled={copyingSchema}
@@ -1855,9 +2059,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 placeholder={`Image ${i + 1} URL`}
                               />
                               {editingProduct.images?.[i] && (
-                                <span className="px-2 py-1 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-lg border border-amber-300/30 uppercase shrink-0">
-                                  Format: {getImageFormat(editingProduct.images[i])}
-                                </span>
+                                <ImageMetaBadge url={editingProduct.images[i]} recommended="800×800px" />
                               )}
                               <label className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-semibold flex items-center gap-1 shrink-0">
                                 <Upload className="w-3.5 h-3.5" />
@@ -2271,9 +2473,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex items-center justify-between mb-1">
                           <label className="block font-semibold text-slate-700">Image URL or Upload *</label>
                           {editingCategory.image && (
-                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30">
-                              Format: {getImageFormat(editingCategory.image)}
-                            </span>
+                            <ImageMetaBadge url={editingCategory.image} recommended="600×600px" />
                           )}
                         </div>
                         <div className="flex gap-2">
@@ -3030,8 +3230,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div key={ban.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
                     <div className="aspect-[16/9] bg-slate-100 overflow-hidden relative">
                       <img src={ban.image_url} alt={ban.title} className="w-full h-full object-cover" />
-                      <span className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-amber-300 font-mono font-bold text-[10px] rounded-md uppercase border border-amber-300/30 shadow-xs">
-                        Format: {getImageFormat(ban.image_url)}
+                      <span className="absolute top-2 right-2">
+                        <ImageMetaBadge url={ban.image_url} />
                       </span>
                     </div>
                     <div className="p-4 space-y-2 text-xs flex flex-col justify-between flex-1">
@@ -3103,9 +3303,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex items-center justify-between mb-1">
                           <label className="block font-semibold text-slate-700">Image URL or Upload *</label>
                           {editingBanner.image_url && (
-                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30">
-                              Format: {getImageFormat(editingBanner.image_url)}
-                            </span>
+                            <ImageMetaBadge url={editingBanner.image_url} recommended="1920×600px" />
                           )}
                         </div>
                         <div className="flex gap-2">
@@ -3197,8 +3395,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div key={item.id} className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
                     <div className="aspect-[16/10] bg-slate-100 overflow-hidden relative">
                       <img src={item.image_url} alt={item.product_name} className="w-full h-full object-cover" />
-                      <span className="absolute top-2 right-2 px-2 py-0.5 bg-slate-900/90 text-amber-300 font-mono font-bold text-[10px] rounded-md uppercase border border-amber-300/30 shadow-xs">
-                        Format: {getImageFormat(item.image_url)}
+                      <span className="absolute top-2 right-2">
+                        <ImageMetaBadge url={item.image_url} />
                       </span>
                     </div>
                     <div className="p-4 space-y-2 text-xs flex flex-col justify-between flex-1">
@@ -3262,9 +3460,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <div className="flex items-center justify-between mb-1">
                           <label className="block font-semibold text-slate-700">Image URL or Upload *</label>
                           {editingLaunchSoon.image_url && (
-                            <span className="px-2 py-0.5 bg-slate-900 text-amber-300 font-mono text-[10px] font-bold rounded-md uppercase border border-amber-300/30">
-                              Format: {getImageFormat(editingLaunchSoon.image_url)}
-                            </span>
+                            <ImageMetaBadge url={editingLaunchSoon.image_url} recommended="800×500px" />
                           )}
                         </div>
                         <div className="flex gap-2">
@@ -4194,6 +4390,202 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   {syncingAll ? 'Syncing...' : '⚡ Seed Store Data'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notifications Drawer Slide-over Panel */}
+      {isNotifPanelOpen && (
+        <div className="fixed inset-0 z-50 overflow-hidden bg-slate-900/60 backdrop-blur-sm flex justify-end animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-white h-full shadow-2xl flex flex-col justify-between border-l border-slate-200">
+            {/* Drawer Header */}
+            <div className="p-4 bg-[#062819] text-white flex items-center justify-between border-b border-emerald-900">
+              <div className="flex items-center gap-2.5">
+                <Bell className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="font-bold text-sm text-amber-300">Admin Store Alerts</h3>
+                  <p className="text-[11px] text-emerald-200">{unreadCount} unread notification{unreadCount === 1 ? '' : 's'}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={handleMarkAllNotifsRead}
+                    className="px-2.5 py-1 bg-emerald-900 hover:bg-emerald-800 text-amber-300 text-[11px] font-semibold rounded-lg border border-emerald-700 transition flex items-center gap-1"
+                    title="Mark all notifications as read"
+                  >
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>Read All</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsNotifPanelOpen(false)}
+                  className="p-1.5 text-slate-300 hover:text-white rounded-lg hover:bg-emerald-900/50 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1 px-4 py-2.5 bg-slate-100 border-b border-slate-200 text-xs overflow-x-auto">
+              <button
+                onClick={() => setNotifFilter('all')}
+                className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                  notifFilter === 'all'
+                    ? 'bg-[#062819] text-amber-300'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                All ({notifications.length})
+              </button>
+              <button
+                onClick={() => setNotifFilter('unread')}
+                className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                  notifFilter === 'unread'
+                    ? 'bg-[#062819] text-amber-300'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                Unread ({unreadCount})
+              </button>
+              <button
+                onClick={() => setNotifFilter('new_order')}
+                className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                  notifFilter === 'new_order'
+                    ? 'bg-[#062819] text-amber-300'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                Orders
+              </button>
+              <button
+                onClick={() => setNotifFilter('low_stock')}
+                className={`px-3 py-1 rounded-lg font-bold transition whitespace-nowrap ${
+                  notifFilter === 'low_stock'
+                    ? 'bg-[#062819] text-amber-300'
+                    : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
+                }`}
+              >
+                Low Stock
+              </button>
+            </div>
+
+            {/* Notifications List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {(() => {
+                const filtered = notifications.filter(n => {
+                  if (notifFilter === 'unread') return !n.is_read;
+                  if (notifFilter === 'new_order') return n.type === 'new_order';
+                  if (notifFilter === 'low_stock') return n.type === 'low_stock';
+                  return true;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-16 text-center text-slate-400">
+                      <Inbox className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                      <p className="font-semibold text-sm text-slate-600">No notifications found</p>
+                      <p className="text-xs text-slate-400 mt-1">Alerts for new orders and low stock will appear here.</p>
+                    </div>
+                  );
+                }
+
+                return filtered.map(notif => {
+                  const isRead = Boolean(notif.is_read);
+                  const isOrder = notif.type === 'new_order';
+
+                  return (
+                    <div
+                      key={notif.id}
+                      className={`p-3.5 rounded-2xl border transition relative group ${
+                        isRead
+                          ? 'bg-slate-50/80 border-slate-200 text-slate-600'
+                          : 'bg-amber-50/50 border-amber-300/80 text-slate-900 shadow-sm'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`p-2 rounded-xl shrink-0 mt-0.5 ${
+                            isOrder ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                          }`}
+                        >
+                          {isOrder ? <ShoppingCart className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
+                        </div>
+
+                        <div className="flex-1 min-w-0 cursor-pointer" onClick={() => handleNotifClick(notif)}>
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="font-bold text-xs text-slate-900 flex items-center gap-1.5 truncate">
+                              {!isRead && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />}
+                              <span>{notif.title}</span>
+                            </h4>
+                            <span className="text-[10px] text-slate-400 shrink-0">{formatDateTime(notif.created_at)}</span>
+                          </div>
+                          <p className="text-xs text-slate-600 mt-1 leading-snug line-clamp-2">{notif.message}</p>
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100 transition">
+                          {!isRead && (
+                            <button
+                              onClick={() => handleMarkNotifRead(notif.id)}
+                              className="p-1.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition"
+                              title="Mark as read"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleDeleteNotif(notif.id)}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                            title="Delete notification"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-3 bg-slate-50 border-t border-slate-200 text-center">
+              <span className="text-[11px] text-slate-500">
+                Polling automatically every 10s &bull; Real-time Alerts Active
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Real-time Toast Notification Banner */}
+      {toastNotif && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-slate-900 text-white rounded-2xl p-4 shadow-2xl border-2 border-amber-400/80 animate-in slide-in-from-bottom-5 duration-300 flex items-start gap-3">
+          <div className={`p-2.5 rounded-xl shrink-0 ${toastNotif.type === 'new_order' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
+            {toastNotif.type === 'new_order' ? <ShoppingCart className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="font-bold text-xs text-amber-300 uppercase tracking-wider">{toastNotif.title}</h4>
+              <button onClick={() => setToastNotif(null)} className="text-slate-400 hover:text-white p-0.5">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <p className="text-xs text-slate-200 mt-1 font-medium">{toastNotif.message}</p>
+            <div className="mt-2.5 flex items-center justify-between">
+              <span className="text-[10px] text-slate-400">{formatDateTime(toastNotif.created_at)}</span>
+              <button
+                onClick={() => {
+                  handleNotifClick(toastNotif);
+                  setToastNotif(null);
+                }}
+                className="text-[11px] font-bold text-amber-400 hover:underline flex items-center gap-1"
+              >
+                View Details &rarr;
+              </button>
             </div>
           </div>
         </div>

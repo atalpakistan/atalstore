@@ -855,6 +855,19 @@ export async function createOrderInSupabase(
     return { success: false, error: ordErr.message };
   }
 
+  // Trigger New Order Notification
+  try {
+    await createNotificationInSupabase({
+      type: 'new_order',
+      title: `🛒 New Order #${orderId}`,
+      message: `New order of Rs. ${(orderRow.total_amount || 0).toLocaleString('en-PK')} placed by ${orderRow.customer_name} (${orderRow.phone}).`,
+      link: `/admin/orders?order=${orderId}`,
+      entity_id: orderId,
+    }, envObj);
+  } catch (notifErr) {
+    console.warn('Notification trigger warning:', notifErr);
+  }
+
   if (body.items && Array.isArray(body.items)) {
     const itemRows = body.items.map((it: any, idx: number) => ({
       id: `it_${orderId}_${idx + 1}`,
@@ -869,20 +882,124 @@ export async function createOrderInSupabase(
     }));
     await client.from('order_items').insert(itemRows);
 
-    // Deduct stock in Supabase products table
+    // Deduct stock in Supabase products table and check for low stock alerts
     for (const it of body.items) {
       const pid = it.product_id || it.id;
       if (pid) {
-        const { data: pData } = await client.from('products').select('available_stock').eq('id', pid).maybeSingle();
+        const { data: pData } = await client
+          .from('products')
+          .select('name, sku, available_stock, low_stock_threshold')
+          .eq('id', pid)
+          .maybeSingle();
+
         if (pData && typeof pData.available_stock === 'number') {
           const newStock = Math.max(0, pData.available_stock - Number(it.quantity || 1));
           await client.from('products').update({ available_stock: newStock }).eq('id', pid);
+
+          // Check if stock fell below threshold
+          const threshold = Number(pData.low_stock_threshold ?? 5);
+          if (newStock <= threshold) {
+            try {
+              await createNotificationInSupabase({
+                type: 'low_stock',
+                title: `⚠️ Low Stock Alert: ${pData.name || 'Product'}`,
+                message: `Inventory for "${pData.name || 'Product'}" (${pData.sku || pid}) dropped to ${newStock} units (Threshold: ${threshold}).`,
+                link: `/admin/products?search=${encodeURIComponent(pData.sku || pData.name || '')}`,
+                entity_id: pid,
+              }, envObj);
+            } catch (lErr) {
+              console.warn('Low stock notification warning:', lErr);
+            }
+          }
         }
       }
     }
   }
 
   return { success: true, order: { ...orderRow, items: body.items || [] } };
+}
+
+// -------------------------------------------------------------------
+// 9. NOTIFICATIONS CRUD
+// -------------------------------------------------------------------
+
+export async function fetchNotificationsFromSupabase(envObj?: any): Promise<any[] | null> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return null;
+
+  const { data, error } = await client
+    .from('notifications')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(100);
+
+  if (error || !data) return null;
+  return data;
+}
+
+export async function createNotificationInSupabase(
+  notif: {
+    type: 'new_order' | 'low_stock' | 'system';
+    title: string;
+    message: string;
+    link?: string;
+    entity_id?: string;
+  },
+  envObj?: any
+): Promise<{ success: boolean; id?: string; error?: string }> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return { success: false, error: 'Database not configured' };
+
+  const id = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const row = {
+    id,
+    type: notif.type,
+    title: notif.title,
+    message: notif.message,
+    link: notif.link || null,
+    entity_id: notif.entity_id || null,
+    is_read: 0,
+    created_at: new Date().toISOString(),
+  };
+
+  const { error } = await client.from('notifications').insert(row);
+  if (error) {
+    console.error('Supabase createNotification error:', error);
+    return { success: false, error: error.message };
+  }
+  return { success: true, id };
+}
+
+export async function markNotificationReadInSupabase(
+  id: string,
+  envObj?: any
+): Promise<{ success: boolean }> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return { success: false };
+
+  await client.from('notifications').update({ is_read: 1 }).eq('id', id);
+  return { success: true };
+}
+
+export async function markAllNotificationsReadInSupabase(
+  envObj?: any
+): Promise<{ success: boolean }> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return { success: false };
+
+  await client.from('notifications').update({ is_read: 1 }).eq('is_read', 0);
+  return { success: true };
+}
+
+export async function deleteNotificationInSupabase(
+  id: string,
+  envObj?: any
+): Promise<{ success: boolean }> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return { success: false };
+
+  await client.from('notifications').delete().eq('id', id);
+  return { success: true };
 }
 
 // -------------------------------------------------------------------
