@@ -180,8 +180,14 @@ function StorefrontApp() {
     }
     return (
       <AdminDashboard
-        onBackToStore={() => handleBackNavigation('/')}
-        onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
+        onBackToStore={() => {
+          fetchHomepage();
+          handleBackNavigation('/');
+        }}
+        onNavigateProduct={(slug) => {
+          fetchHomepage();
+          navigateTo(`/product/${slug}`);
+        }}
       />
     );
   }

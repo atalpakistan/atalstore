@@ -504,8 +504,23 @@ router.post('/orders', (req, res) => {
       return res.status(400).json({ error: 'Missing required shipping information or empty order items' });
     }
 
-    if (!transaction_id || !transaction_id.trim()) {
-      return res.status(400).json({ error: 'Transaction ID / Receipt Number is mandatory for all payment options.' });
+    if (payment_method === 'cod') {
+      const codEnabledRow = db.prepare("SELECT value FROM settings WHERE key = 'cod_enabled'").get() as { value: string } | undefined;
+      if (codEnabledRow && codEnabledRow.value === 'false') {
+        return res.status(400).json({ error: 'Cash on Delivery (COD) is currently disabled by the store administrator.' });
+      }
+    }
+
+    const advSettingRow = db.prepare("SELECT value FROM settings WHERE key = 'delivery_advance_mandatory'").get() as { value: string } | undefined;
+    const isAdvanceMandatory = advSettingRow ? advSettingRow.value !== 'false' : true;
+    const requiresTxId = payment_method !== 'cod' || isAdvanceMandatory;
+
+    if (requiresTxId && (!transaction_id || !transaction_id.trim())) {
+      return res.status(400).json({
+        error: payment_method === 'cod'
+          ? 'Transaction ID / Receipt Number for advance shipping payment is required.'
+          : 'Transaction ID / Receipt Number is mandatory for this payment option.'
+      });
     }
 
     // Get shipping fee rules from settings

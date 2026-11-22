@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: Record<string, any> = {
   faq_content: '',
   free_shipping_threshold: 9999,
   default_shipping_fee: 290,
+  delivery_advance_mandatory: true,
   min_order_amount: 500,
   cod_enabled: true,
   jazzcash_enabled: true,

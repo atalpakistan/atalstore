@@ -119,6 +119,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Overview metrics state
   const [metrics, setMetrics] = useState<any>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [showImageGuideModal, setShowImageGuideModal] = useState(false);
 
   // Products state
   const [products, setProducts] = useState<Product[]>([]);
@@ -164,8 +165,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [newCouponMin, setNewCouponMin] = useState<number>(2000);
 
   // Settings & Saving state
-  const [settings, setSettings] = useState<Record<string, string>>({});
+  const [settings, setSettings] = useState<Record<string, any>>({});
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savingCodAdvance, setSavingCodAdvance] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingBanner, setSavingBanner] = useState(false);
@@ -1026,6 +1028,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // Toggle Advance Payment of Shipping Charge on COD (ON / OFF)
+  const isCodAdvanceOn =
+    settings['delivery_advance_mandatory'] !== false &&
+    String(settings['delivery_advance_mandatory'] ?? 'true') !== 'false';
+
+  const handleToggleCodAdvance = async () => {
+    const nextValue = isCodAdvanceOn ? 'false' : 'true';
+    const nextSettings = { ...settings, delivery_advance_mandatory: nextValue };
+    setSettings(nextSettings);
+    setSavingCodAdvance(true);
+    const { ok, error } = await safeFetchJson('/api/admin/settings', {
+      method: 'PUT',
+      headers: authHeaders,
+      body: JSON.stringify({ delivery_advance_mandatory: nextValue })
+    });
+    setSavingCodAdvance(false);
+    if (ok) {
+      showFeedback(
+        nextValue === 'true'
+          ? 'Advance shipping charge on COD turned ON (mandatory)'
+          : 'Advance shipping charge on COD turned OFF (pay full amount on delivery)'
+      );
+      fetchSettings();
+    } else {
+      setSettings(settings);
+      showFeedback(error || 'Failed to update COD advance shipping setting', 'error');
+    }
+  };
+
   // Create Coupon
   const handleCreateCoupon = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1296,6 +1327,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           >
             <Copy className="w-3.5 h-3.5" />
             <span>{copyingSchema ? 'Copying...' : 'Copy SQL Schema'}</span>
+          </button>
+          <button
+            onClick={() => setShowImageGuideModal(true)}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-900 hover:bg-emerald-800 text-amber-300 font-bold rounded-lg border border-emerald-700 transition"
+            title="View best recommended image sizes and resolutions for ATAL store"
+          >
+            <Image className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden sm:inline">Image Size Guide</span>
           </button>
           <button
             onClick={handleOpenDbSetupModal}
@@ -3667,7 +3706,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Cash on Delivery (COD) Enabled</label>
                       <select
-                        value={settings['cod_enabled'] || 'true'}
+                        value={String(settings['cod_enabled'] ?? 'true') === 'false' ? 'false' : 'true'}
                         onChange={(e) => setSettings({ ...settings, cod_enabled: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                       >
@@ -3675,6 +3714,63 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         <option value="false">Disabled</option>
                       </select>
                     </div>
+                  </div>
+
+                  {/* Advance Payment of Shipping Charge on COD (ON / OFF Toggle Button) */}
+                  <div className="mt-4 p-4 rounded-2xl bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-xs sm:text-sm">
+                          Advance Payment of Shipping Charge on Cash on Delivery (COD)
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            isCodAdvanceOn
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-slate-200 text-slate-700 border border-slate-300'
+                          }`}
+                        >
+                          {isCodAdvanceOn ? 'ON' : 'OFF'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        {isCodAdvanceOn
+                          ? `ON: Customers placing Cash on Delivery orders must pay the Rs. ${settings['default_shipping_fee'] || '290'} shipping charge in advance and submit a Transaction ID.`
+                          : 'OFF: Customers placing Cash on Delivery orders do NOT pay shipping charges in advance and do not need a Transaction ID.'}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isCodAdvanceOn}
+                      disabled={savingCodAdvance}
+                      onClick={handleToggleCodAdvance}
+                      className={`shrink-0 inline-flex items-center gap-3 px-4 py-2 rounded-xl font-bold text-xs border transition shadow-xs disabled:opacity-60 ${
+                        isCodAdvanceOn
+                          ? 'bg-[#093824] text-amber-300 border-[#093824] hover:bg-[#062819]'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                          isCodAdvanceOn ? 'bg-amber-400' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
+                            isCodAdvanceOn ? 'translate-x-4.5' : 'translate-x-1'
+                          }`}
+                        />
+                      </span>
+                      <span>
+                        {savingCodAdvance
+                          ? 'Saving...'
+                          : isCodAdvanceOn
+                          ? 'ON (Turn OFF)'
+                          : 'OFF (Turn ON)'}
+                      </span>
+                    </button>
                   </div>
                 </div>
 
@@ -4585,6 +4681,168 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="text-[11px] font-bold text-amber-400 hover:underline flex items-center gap-1"
               >
                 View Details &rarr;
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Best Image Sizes Guide Modal */}
+      {showImageGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-100 overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="p-5 sm:p-6 bg-gradient-to-r from-[#062819] via-[#093824] to-[#0d4f33] text-white flex items-center justify-between shrink-0 border-b border-emerald-900">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-400/20 rounded-2xl border border-amber-400/30 text-amber-300">
+                  <Image className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-display text-lg sm:text-xl font-bold text-amber-300">
+                    ATAL Store Best Image Dimensions & File Size Guide
+                  </h3>
+                  <p className="text-xs text-emerald-200">
+                    Recommended aspect ratios, pixel resolutions & format guidelines for fast page speeds
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowImageGuideModal(false)}
+                className="p-1.5 text-slate-300 hover:text-white rounded-xl hover:bg-emerald-900/60 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
+              
+              {/* Quick Summary Banner */}
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-amber-950 flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-bold text-sm text-amber-900">Golden Rule for E-Commerce Page Speed</h4>
+                  <p className="mt-1 leading-relaxed text-slate-700">
+                    Keep single image file sizes <strong>under 300 KB</strong> (ideally using <strong>WebP</strong> or <strong>compressed JPG</strong> format). All store image fields automatically analyze, show pixel dimensions, format, and file sizes in real time!
+                  </p>
+                </div>
+              </div>
+
+              {/* Grid of Section Guidelines */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* 1. Product Images */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm text-[#093824] flex items-center gap-2">
+                      <Package className="w-4 h-4 text-emerald-700" />
+                      1. Product Cards & Gallery
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md uppercase">Square 1:1</span>
+                  </div>
+                  <div className="space-y-1.5 text-slate-600 pt-2 border-t border-slate-200/60">
+                    <p><strong>Best Dimension:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">800 × 800 px</code> or <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">1000 × 1000 px</code></p>
+                    <p><strong>Aspect Ratio:</strong> 1:1 Square (or 4:5 Portrait <code className="font-mono">800 × 1000 px</code> for Apparel)</p>
+                    <p><strong>Max File Size:</strong> Under 200 KB</p>
+                    <p><strong>Format:</strong> WebP / JPG / PNG (transparent cutout)</p>
+                  </div>
+                </div>
+
+                {/* 2. Hero Carousel Banners */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm text-[#093824] flex items-center gap-2">
+                      <LayoutDashboard className="w-4 h-4 text-emerald-700" />
+                      2. Hero Carousel Banners
+                    </span>
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-md uppercase">Wide 16:5</span>
+                  </div>
+                  <div className="space-y-1.5 text-slate-600 pt-2 border-t border-slate-200/60">
+                    <p><strong>Desktop Banner:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">1920 × 600 px</code> or <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">1920 × 720 px</code></p>
+                    <p><strong>Mobile Banner:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">800 × 800 px</code> or <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">800 × 1000 px</code></p>
+                    <p><strong>Max File Size:</strong> Under 350 KB</p>
+                    <p><strong>Format:</strong> WebP or Compressed JPG</p>
+                  </div>
+                </div>
+
+                {/* 3. Category Icons & Collections */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm text-[#093824] flex items-center gap-2">
+                      <Grid className="w-4 h-4 text-emerald-700" />
+                      3. Category Row Covers
+                    </span>
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-md uppercase">Square 1:1</span>
+                  </div>
+                  <div className="space-y-1.5 text-slate-600 pt-2 border-t border-slate-200/60">
+                    <p><strong>Best Dimension:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">600 × 600 px</code></p>
+                    <p><strong>Aspect Ratio:</strong> 1:1 Square</p>
+                    <p><strong>Max File Size:</strong> Under 150 KB</p>
+                    <p><strong>Format:</strong> WebP, PNG or JPG</p>
+                  </div>
+                </div>
+
+                {/* 4. Launch Soon Drops */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm text-[#093824] flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-emerald-700" />
+                      4. Launch Soon Teasers
+                    </span>
+                    <span className="px-2 py-0.5 bg-rose-100 text-rose-800 text-[10px] font-bold rounded-md uppercase">Landscape 16:10</span>
+                  </div>
+                  <div className="space-y-1.5 text-slate-600 pt-2 border-t border-slate-200/60">
+                    <p><strong>Best Dimension:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">800 × 500 px</code> or <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">1200 × 750 px</code></p>
+                    <p><strong>Aspect Ratio:</strong> 16:10 Landscape</p>
+                    <p><strong>Max File Size:</strong> Under 250 KB</p>
+                    <p><strong>Format:</strong> WebP or JPG</p>
+                  </div>
+                </div>
+
+                {/* 5. Store Branding & Logos */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm text-[#093824] flex items-center gap-2">
+                      <Settings className="w-4 h-4 text-emerald-700" />
+                      5. Store Header Logo
+                    </span>
+                    <span className="px-2 py-0.5 bg-purple-100 text-purple-800 text-[10px] font-bold rounded-md uppercase">Transparent PNG</span>
+                  </div>
+                  <div className="space-y-1.5 text-slate-600 pt-2 border-t border-slate-200/60">
+                    <p><strong>Header Logo Dimension:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">400 × 120 px</code></p>
+                    <p><strong>Browser Favicon:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">512 × 512 px</code></p>
+                    <p><strong>Max File Size:</strong> Under 100 KB</p>
+                    <p><strong>Format:</strong> PNG (Transparent Background) or SVG</p>
+                  </div>
+                </div>
+
+                {/* 6. Payment QR Codes */}
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm text-[#093824] flex items-center gap-2">
+                      <CreditCard className="w-4 h-4 text-emerald-700" />
+                      6. Payment Account QR Codes
+                    </span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md uppercase">Square Scan</span>
+                  </div>
+                  <div className="space-y-1.5 text-slate-600 pt-2 border-t border-slate-200/60">
+                    <p><strong>Best Dimension:</strong> <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-900">600 × 600 px</code></p>
+                    <p><strong>Contrast:</strong> High contrast black & white scan code</p>
+                    <p><strong>Max File Size:</strong> Under 150 KB</p>
+                    <p><strong>Format:</strong> PNG or Crisp JPG</p>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">
+              <button
+                onClick={() => setShowImageGuideModal(false)}
+                className="px-5 py-2.5 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-xs rounded-xl shadow transition"
+              >
+                Got It, Thanks!
               </button>
             </div>
           </div>

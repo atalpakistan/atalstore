@@ -132,6 +132,7 @@ export interface StoreSettings {
   free_shipping_threshold: number;
   default_shipping_fee: number;
   min_order_amount: number;
+  delivery_advance_mandatory?: boolean;
   cod_enabled: boolean;
   jazzcash_enabled: boolean;
   jazzcash_merchant_id: string;
@@ -142,6 +143,7 @@ export interface StoreSettings {
   easypaisa_store_id: string;
   easypaisa_hash_key?: string;
   easypaisa_sandbox: boolean;
+  hbl_enabled?: boolean;
 }
 
 export interface User {

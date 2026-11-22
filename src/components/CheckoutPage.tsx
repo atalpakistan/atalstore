@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, ShieldCheck, Truck, Lock, CreditCard, Banknote,
   CheckCircle2, AlertCircle, Tag, Loader2
@@ -47,7 +47,31 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [landmark, setLandmark] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'jazzcash' | 'easypaisa' | 'hbl'>('cod');
+  const [liveSettings, setLiveSettings] = useState<StoreSettings | null | undefined>(settings);
+
+  useEffect(() => {
+    setLiveSettings(settings);
+  }, [settings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/settings')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!cancelled && data && typeof data === 'object') {
+          setLiveSettings((prev) => ({ ...(prev || {}), ...data }));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'jazzcash' | 'easypaisa' | 'hbl'>(() => {
+    const codOn = settings?.cod_enabled !== false && String(settings?.cod_enabled) !== 'false';
+    return codOn ? 'cod' : 'jazzcash';
+  });
   const [transactionId, setTransactionId] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(null);
@@ -57,9 +81,22 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  // Shipping rules (Free over Rs. 9,999, Rs. 290 standard delivery fee)
-  const freeThreshold = settings?.free_shipping_threshold || 9999;
-  const defaultFee = settings?.default_shipping_fee || 290;
+  // Shipping rules & COD Advance Shipping toggle
+  const activeSettings = liveSettings || settings;
+  const freeThreshold = activeSettings?.free_shipping_threshold || 9999;
+  const defaultFee = activeSettings?.default_shipping_fee || 290;
+  const isCodEnabled = activeSettings?.cod_enabled !== false && String(activeSettings?.cod_enabled) !== 'false';
+  const isCodAdvanceShippingRequired =
+    activeSettings?.delivery_advance_mandatory !== false &&
+    String(activeSettings?.delivery_advance_mandatory) !== 'false';
+  const requiresTransactionId = paymentMethod !== 'cod' || isCodAdvanceShippingRequired;
+
+  useEffect(() => {
+    if (!isCodEnabled && paymentMethod === 'cod') {
+      setPaymentMethod('jazzcash');
+    }
+  }, [isCodEnabled, paymentMethod]);
+
   const shippingFee = subtotal >= freeThreshold ? 0 : defaultFee;
   const discountAmount = appliedCoupon ? appliedCoupon.discount : 0;
   const finalTotal = Math.max(0, subtotal - discountAmount + shippingFee);
@@ -108,7 +145,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       return;
     }
 
-    if (!transactionId.trim()) {
+    if (requiresTransactionId && !transactionId.trim()) {
       setSubmitError('Transaction ID / Receipt Number is mandatory for order verification.');
       return;
     }
@@ -146,7 +183,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
           landmark: landmark.trim() || null,
           order_notes: orderNotes.trim() || null,
           payment_method: paymentMethod,
-          transaction_id: transactionId.trim(),
+          transaction_id: requiresTransactionId ? transactionId.trim() : null,
           coupon_code: appliedCoupon?.code || null,
           items: items.map((it) => {
             const qty = Number(it.quantity) || 1;
@@ -453,35 +490,41 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
             <div className="space-y-3">
               {/* COD Option */}
-              <label
-                className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
-                  paymentMethod === 'cod'
-                    ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === 'cod'}
-                  onChange={() => setPaymentMethod('cod')}
-                  className="mt-1 accent-[#093824]"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                      <Banknote className="w-4 h-4 text-emerald-800" />
-                      Cash on Delivery (COD) — Advance Delivery Fee (Rs. 290) Required
-                    </span>
-                    <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
-                      Courier Verified
-                    </span>
+              {isCodEnabled && (
+                <label
+                  className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
+                    paymentMethod === 'cod'
+                      ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    checked={paymentMethod === 'cod'}
+                    onChange={() => setPaymentMethod('cod')}
+                    className="mt-1 accent-[#093824]"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <Banknote className="w-4 h-4 text-emerald-800" />
+                        {isCodAdvanceShippingRequired
+                          ? `Cash on Delivery (COD) — Advance Delivery Fee (Rs. ${defaultFee}) Required`
+                          : 'Cash on Delivery (COD) — Pay on Delivery'}
+                      </span>
+                      <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/80 px-2.5 py-0.5 rounded-full">
+                        {isCodAdvanceShippingRequired ? 'Courier Verified' : 'No Advance Required'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      {isCodAdvanceShippingRequired
+                        ? `Advance payment of Rs. ${defaultFee} delivery charges is mandatory via JazzCash, Easypaisa, or HBL before dispatch. Balance payable on delivery.`
+                        : 'Pay full order amount in cash directly to the courier rider when your parcel arrives. No advance shipping payment required.'}
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Advance payment of Rs. 290 delivery charges is mandatory via JazzCash, Easypaisa, or HBL before dispatch. Balance payable on delivery.
-                  </p>
-                </div>
-              </label>
+                </label>
+              )}
 
               {/* JazzCash Option */}
               <label
@@ -622,36 +665,38 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             )}
 
             {/* COD Advance Delivery Payment Notice */}
-            {paymentMethod === 'cod' && (
+            {paymentMethod === 'cod' && isCodAdvanceShippingRequired && (
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-2 mt-4 text-xs">
-                <p className="font-bold text-amber-900">COD Advance Delivery Fee Transfer Details (Rs. 290):</p>
+                <p className="font-bold text-amber-900">COD Advance Delivery Fee Transfer Details (Rs. {defaultFee}):</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-700 font-mono bg-white p-3 rounded-xl border border-amber-200/60">
                   <div><span className="text-slate-400">JazzCash / Easypaisa:</span> <strong className="text-slate-900">03227796097</strong> (Omar Farooq)</div>
                   <div><span className="text-slate-400">HBL Bank:</span> <strong className="text-slate-900">50627918149903</strong> (Umer Farooq)</div>
                 </div>
                 <p className="text-[11px] text-amber-800">
-                  Please transfer Rs. 290 for advance courier charges and enter your Transaction ID below to verify your COD order.
+                  Please transfer Rs. {defaultFee} for advance courier charges and enter your Transaction ID below to verify your COD order.
                 </p>
               </div>
             )}
 
-            {/* Mandatory Transaction ID input */}
-            <div className="pt-2">
-              <label className="block text-xs font-bold text-slate-900 mb-1">
-                Transaction ID / Receipt Number <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. TID-98273919 or 382910298"
-                value={transactionId}
-                onChange={(e) => setTransactionId(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-emerald-900/40 rounded-xl text-xs sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#093824] bg-white"
-              />
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Mandatory for order verification. Enter the transaction reference from your bank/wallet SMS or receipt.
-              </span>
-            </div>
+            {/* Mandatory Transaction ID input when advance payment or digital wallet is active */}
+            {requiresTransactionId && (
+              <div className="pt-2">
+                <label className="block text-xs font-bold text-slate-900 mb-1">
+                  Transaction ID / Receipt Number <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. TID-98273919 or 382910298"
+                  value={transactionId}
+                  onChange={(e) => setTransactionId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border-2 border-emerald-900/40 rounded-xl text-xs sm:text-sm font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#093824] bg-white"
+                />
+                <span className="text-[11px] text-slate-500 mt-1 block">
+                  Mandatory for order verification. Enter the transaction reference from your bank/wallet SMS or receipt.
+                </span>
+              </div>
+            )}
           </div>
 
         </div>

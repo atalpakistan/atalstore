@@ -319,6 +319,21 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       if (!isSupabaseConfigured(env)) {
         return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
       }
+
+      const sbSettings = await fetchSettingsFromSupabase(env);
+      if (body.payment_method === 'cod' && sbSettings?.cod_enabled === false) {
+        return jsonResponse({ error: 'Cash on Delivery (COD) is currently disabled by the store administrator.' }, 400);
+      }
+      const isAdvanceMandatory = sbSettings ? sbSettings.delivery_advance_mandatory !== false : true;
+      const requiresTxId = body.payment_method !== 'cod' || isAdvanceMandatory;
+      if (requiresTxId && (!body.transaction_id || !String(body.transaction_id).trim())) {
+        return jsonResponse({
+          error: body.payment_method === 'cod'
+            ? 'Transaction ID / Receipt Number for advance shipping payment is required.'
+            : 'Transaction ID / Receipt Number is mandatory for this payment option.'
+        }, 400);
+      }
+
       const sbRes = await createOrderInSupabase(body, env);
       if (sbRes.success) {
         return jsonResponse({ success: true, orderId: sbRes.order.id, order: sbRes.order });
