@@ -75,16 +75,14 @@ const DEFAULT_SETTINGS: Record<string, any> = {
   cod_enabled: true,
   jazzcash_enabled: true,
   jazzcash_account_title: 'Omar Farooq',
+  jazzcash_till_id: '',
   jazzcash_account_number: '03227796097',
   jazzcash_qr_url: '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg',
   easypaisa_enabled: true,
   easypaisa_account_title: 'Omar Farooq',
+  easypaisa_till_id: '',
   easypaisa_account_number: '03227796097',
   easypaisa_qr_url: '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg',
-  hbl_enabled: true,
-  hbl_account_title: 'Umer Farooq',
-  hbl_account_number: '50627918149903',
-  hbl_qr_url: '/assets/aistudio/WhatsApp_Image_2026-10-22_at_9.45.39_AM_5e21af89.jpeg',
 };
 
 const DEFAULT_CATEGORIES = [

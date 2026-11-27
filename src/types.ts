@@ -136,14 +136,21 @@ export interface StoreSettings {
   cod_enabled: boolean;
   jazzcash_enabled: boolean;
   jazzcash_merchant_id: string;
+  jazzcash_account_title?: string;
+  jazzcash_till_id?: string;
+  jazzcash_account_number?: string;
+  jazzcash_qr_url?: string;
   jazzcash_password?: string;
   jazzcash_integrity_salt?: string;
   jazzcash_sandbox: boolean;
   easypaisa_enabled: boolean;
   easypaisa_store_id: string;
+  easypaisa_account_title?: string;
+  easypaisa_till_id?: string;
+  easypaisa_account_number?: string;
+  easypaisa_qr_url?: string;
   easypaisa_hash_key?: string;
   easypaisa_sandbox: boolean;
-  hbl_enabled?: boolean;
 }
 
 export interface User {
@@ -196,7 +203,7 @@ export interface Order {
   discount: number;
   shipping_fee: number;
   total_amount: number;
-  payment_method: 'cod' | 'jazzcash' | 'easypaisa' | 'hbl' | string;
+  payment_method: 'cod' | 'jazzcash' | 'easypaisa' | string;
   payment_status: 'pending' | 'paid' | 'failed' | 'cancelled' | 'refunded';
   order_status: 'Pending' | 'Confirmed' | 'Processing' | 'Ready to Ship' | 'Shipped' | 'Delivered' | 'Cancelled' | 'Returned' | 'Refunded';
   tracking_number?: string;

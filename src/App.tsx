@@ -26,6 +26,7 @@ import { AuthModal } from './components/AuthModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CustomerDashboard } from './components/CustomerDashboard';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { FloatingWhatsApp } from './components/FloatingWhatsApp';
 
 import { Product, ProductVariant, HomepagePayload, StoreSettings } from './types';
 import { Loader2 } from 'lucide-react';
@@ -379,6 +380,11 @@ function StorefrontApp() {
             }
           }}
         />
+      )}
+
+      {/* Floating WhatsApp Support Button */}
+      {!isAdminRoute && (
+        <FloatingWhatsApp supportWhatsapp={homepageData?.settings?.support_whatsapp} />
       )}
 
       {/* Slide-over Cart Drawer */}

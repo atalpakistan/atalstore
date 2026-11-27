@@ -292,9 +292,6 @@ export const Footer: React.FC<FooterProps> = ({
             <span className="px-2 py-0.5 bg-emerald-950 border border-emerald-800 rounded font-bold text-emerald-400">
               Easypaisa
             </span>
-            <span className="px-2 py-0.5 bg-emerald-950 border border-emerald-800 rounded font-bold text-cyan-300">
-              HBL Bank
-            </span>
           </div>
         </div>
 

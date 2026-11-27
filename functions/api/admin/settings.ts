@@ -38,19 +38,17 @@ const DEFAULT_SETTINGS: Record<string, any> = {
   jazzcash_enabled: true,
   jazzcash_merchant_id: '03227796097',
   jazzcash_account_title: 'Omar Farooq',
+  jazzcash_till_id: '',
   jazzcash_account_number: '03227796097',
   jazzcash_qr_url: '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg',
   jazzcash_sandbox: false,
   easypaisa_enabled: true,
   easypaisa_store_id: '03227796097',
   easypaisa_account_title: 'Omar Farooq',
+  easypaisa_till_id: '',
   easypaisa_account_number: '03227796097',
   easypaisa_qr_url: '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg',
   easypaisa_sandbox: false,
-  hbl_enabled: true,
-  hbl_account_title: 'Umer Farooq',
-  hbl_account_number: '50627918149903',
-  hbl_qr_url: '/assets/aistudio/WhatsApp_Image_2026-10-22_at_9.45.39_AM_5e21af89.jpeg',
 };
 
 function getStoredSettings(): Record<string, any> {
@@ -107,8 +105,7 @@ const BOOLEAN_KEYS = new Set([
   'jazzcash_enabled',
   'jazzcash_sandbox',
   'easypaisa_enabled',
-  'easypaisa_sandbox',
-  'hbl_enabled'
+  'easypaisa_sandbox'
 ]);
 
 function sanitizeAndValidateSettings(input: Record<string, any>): Partial<StoreSettings> & Record<string, any> {

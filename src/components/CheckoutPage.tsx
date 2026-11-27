@@ -68,7 +68,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     };
   }, []);
 
-  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'jazzcash' | 'easypaisa' | 'hbl'>(() => {
+  const [paymentMethod, setPaymentMethod] = useState<'cod' | 'jazzcash' | 'easypaisa'>(() => {
     const codOn = settings?.cod_enabled !== false && String(settings?.cod_enabled) !== 'false';
     return codOn ? 'cod' : 'jazzcash';
   });
@@ -90,6 +90,20 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     activeSettings?.delivery_advance_mandatory !== false &&
     String(activeSettings?.delivery_advance_mandatory) !== 'false';
   const requiresTransactionId = paymentMethod !== 'cod' || isCodAdvanceShippingRequired;
+
+  const jcAccountName = String(activeSettings?.jazzcash_account_title || 'Omar Farooq');
+  const jcTillId = String(activeSettings?.jazzcash_till_id || '').trim();
+  const jcAccountNumber = String(activeSettings?.jazzcash_account_number || '03227796097');
+  const jcQrUrl = String(
+    activeSettings?.jazzcash_qr_url || '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg'
+  );
+
+  const epAccountName = String(activeSettings?.easypaisa_account_title || 'Omar Farooq');
+  const epTillId = String(activeSettings?.easypaisa_till_id || '').trim();
+  const epAccountNumber = String(activeSettings?.easypaisa_account_number || '03227796097');
+  const epQrUrl = String(
+    activeSettings?.easypaisa_qr_url || '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg'
+  );
 
   useEffect(() => {
     if (!isCodEnabled && paymentMethod === 'cod') {
@@ -519,7 +533,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
                       {isCodAdvanceShippingRequired
-                        ? `Advance payment of Rs. ${defaultFee} delivery charges is mandatory via JazzCash, Easypaisa, or HBL before dispatch. Balance payable on delivery.`
+                        ? `Advance payment of Rs. ${defaultFee} delivery charges is mandatory via JazzCash or Easypaisa before dispatch. Balance payable on delivery.`
                         : 'Pay full order amount in cash directly to the courier rider when your parcel arrives. No advance shipping payment required.'}
                     </p>
                   </div>
@@ -552,7 +566,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Transfer full amount to Omar Farooq (03227796097) and enter Transaction ID below.
+                    Transfer full amount to {jcAccountName} ({jcAccountNumber})
+                    {jcTillId ? ` · Till ID: ${jcTillId}` : ''} and enter Transaction ID below.
                   </p>
                 </div>
               </label>
@@ -583,38 +598,8 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Transfer full amount to Omar Farooq (03227796097) and enter Transaction ID below.
-                  </p>
-                </div>
-              </label>
-
-              {/* HBL Bank Transfer Option */}
-              <label
-                className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
-                  paymentMethod === 'hbl'
-                    ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === 'hbl'}
-                  onChange={() => setPaymentMethod('hbl')}
-                  className="mt-1 accent-[#093824]"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-cyan-600" />
-                      HBL Bank Transfer
-                    </span>
-                    <span className="text-[11px] font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded">
-                      Direct Deposit
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Transfer to Umer Farooq (50627918149903) and enter Transaction ID below.
+                    Transfer full amount to {epAccountName} ({epAccountNumber})
+                    {epTillId ? ` · Till ID: ${epTillId}` : ''} and enter Transaction ID below.
                   </p>
                 </div>
               </label>
@@ -627,7 +612,6 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                   <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
                     {paymentMethod === 'jazzcash' && 'JazzCash Account & QR Code'}
                     {paymentMethod === 'easypaisa' && 'Easypaisa Account & QR Code'}
-                    {paymentMethod === 'hbl' && 'HBL Bank Account & QR Code'}
                   </h4>
                   <span className="text-[11px] text-emerald-800 font-bold">
                     Scan or Send Amount & Copy Transaction ID
@@ -636,27 +620,35 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
                   <div className="space-y-1.5 text-xs text-slate-700 font-mono bg-white p-3 rounded-xl border">
-                    <div><span className="text-slate-400">Account Title:</span> <strong className="text-slate-900">
-                      {paymentMethod === 'hbl' ? 'Umer Farooq' : 'Omar Farooq'}
-                    </strong></div>
-                    <div><span className="text-slate-400">Account Number:</span> <strong className="text-[#093824]">
-                      {paymentMethod === 'hbl' ? '50627918149903' : '03227796097'}
-                    </strong></div>
+                    <div>
+                      <span className="text-slate-400">Merchant Account Name:</span>{' '}
+                      <strong className="text-slate-900">
+                        {paymentMethod === 'jazzcash' ? jcAccountName : epAccountName}
+                      </strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-400">Account Number:</span>{' '}
+                      <strong className="text-[#093824]">
+                        {paymentMethod === 'jazzcash' ? jcAccountNumber : epAccountNumber}
+                      </strong>
+                    </div>
+                    {(paymentMethod === 'jazzcash' ? jcTillId : epTillId) && (
+                      <div>
+                        <span className="text-slate-400">Till ID:</span>{' '}
+                        <strong className="text-slate-900">
+                          {paymentMethod === 'jazzcash' ? jcTillId : epTillId}
+                        </strong>
+                      </div>
+                    )}
                     <div className="text-[11px] text-slate-500 font-sans pt-1">
-                      {paymentMethod === 'hbl' ? 'Habib Bank Limited (HBL) Pakistan' : 'JazzCash / Easypaisa Mobile Account'}
+                      {paymentMethod === 'jazzcash' ? 'JazzCash Mobile / Merchant Account' : 'Easypaisa Mobile / Merchant Account'}
                     </div>
                   </div>
 
                   <div className="flex justify-center bg-white p-2 rounded-xl border">
                     <img
-                      src={
-                        paymentMethod === 'jazzcash'
-                          ? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg'
-                          : paymentMethod === 'easypaisa'
-                          ? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg'
-                          : '/assets/aistudio/WhatsApp_Image_2026-10-22_at_9.45.39_AM_5e21af89.jpeg'
-                      }
-                      alt="Payment QR Code"
+                      src={paymentMethod === 'jazzcash' ? jcQrUrl : epQrUrl}
+                      alt={`${paymentMethod === 'jazzcash' ? 'JazzCash' : 'Easypaisa'} Payment QR Code`}
                       className="w-32 h-32 object-contain"
                     />
                   </div>
@@ -669,8 +661,16 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-2 mt-4 text-xs">
                 <p className="font-bold text-amber-900">COD Advance Delivery Fee Transfer Details (Rs. {defaultFee}):</p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-slate-700 font-mono bg-white p-3 rounded-xl border border-amber-200/60">
-                  <div><span className="text-slate-400">JazzCash / Easypaisa:</span> <strong className="text-slate-900">03227796097</strong> (Omar Farooq)</div>
-                  <div><span className="text-slate-400">HBL Bank:</span> <strong className="text-slate-900">50627918149903</strong> (Umer Farooq)</div>
+                  <div>
+                    <span className="text-slate-400">JazzCash:</span>{' '}
+                    <strong className="text-slate-900">{jcAccountNumber}</strong> ({jcAccountName})
+                    {jcTillId ? <span className="block text-[11px] text-slate-500">Till ID: {jcTillId}</span> : null}
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Easypaisa:</span>{' '}
+                    <strong className="text-slate-900">{epAccountNumber}</strong> ({epAccountName})
+                    {epTillId ? <span className="block text-[11px] text-slate-500">Till ID: {epTillId}</span> : null}
+                  </div>
                 </div>
                 <p className="text-[11px] text-amber-800">
                   Please transfer Rs. {defaultFee} for advance courier charges and enter your Transaction ID below to verify your COD order.

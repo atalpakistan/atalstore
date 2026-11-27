@@ -2949,7 +2949,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             )}
                           </div>
                           <span className="text-[11px] text-slate-500 mt-1 block">
-                            Verify this reference against your JazzCash, Easypaisa, or HBL Bank merchant statement.
+                            Verify this reference against your JazzCash or Easypaisa merchant statement.
                           </span>
                         </div>
 
@@ -3775,17 +3775,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
 
                 {/* JazzCash Merchant Credentials */}
-                <div className="space-y-3 pt-4 border-t">
+                <div className="space-y-4 pt-4 border-t">
                   <h3 className="font-bold text-slate-900 text-sm border-b pb-2 flex items-center justify-between">
                     <span>JazzCash Integration Credentials</span>
                     <span className="text-[11px] font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded">Official Adapter</span>
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Merchant Account Name</label>
+                      <input
+                        type="text"
+                        value={settings['jazzcash_account_title'] ?? 'Omar Farooq'}
+                        onChange={(e) => setSettings({ ...settings, jazzcash_account_title: e.target.value })}
+                        placeholder="e.g. Omar Farooq"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Till ID</label>
+                      <input
+                        type="text"
+                        value={settings['jazzcash_till_id'] ?? ''}
+                        onChange={(e) => setSettings({ ...settings, jazzcash_till_id: e.target.value })}
+                        placeholder="Enter JazzCash Till ID"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Account Number</label>
+                      <input
+                        type="text"
+                        value={settings['jazzcash_account_number'] ?? '03227796097'}
+                        onChange={(e) => setSettings({ ...settings, jazzcash_account_number: e.target.value })}
+                        placeholder="e.g. 03227796097"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                      />
+                    </div>
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Merchant ID</label>
                       <input
                         type="text"
-                        value={settings['jazzcash_merchant_id'] || 'MC12345_TEST'}
+                        value={settings['jazzcash_merchant_id'] ?? 'MC12345_TEST'}
                         onChange={(e) => setSettings({ ...settings, jazzcash_merchant_id: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
                       />
@@ -3793,7 +3823,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Gateway Mode</label>
                       <select
-                        value={settings['jazzcash_sandbox'] || 'true'}
+                        value={String(settings['jazzcash_sandbox'] ?? 'true')}
                         onChange={(e) => setSettings({ ...settings, jazzcash_sandbox: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                       >
@@ -3802,20 +3832,92 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </select>
                     </div>
                   </div>
+
+                  {/* JazzCash QR Image */}
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-slate-700">JazzCash QR Image</label>
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                      <div className="flex-1 w-full flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={settings['jazzcash_qr_url'] ?? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg'}
+                          onChange={(e) => setSettings({ ...settings, jazzcash_qr_url: e.target.value })}
+                          placeholder="Enter QR image URL or upload file"
+                          className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
+                        />
+                        {settings['jazzcash_qr_url'] && (
+                          <ImageMetaBadge url={String(settings['jazzcash_qr_url'])} recommended="500×500px" />
+                        )}
+                        <label className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-semibold flex items-center gap-1.5 shrink-0">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload QR</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleImageUploadFile(e, (url) =>
+                                setSettings((prev: Record<string, any>) => ({ ...prev, jazzcash_qr_url: url }))
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+                      {(settings['jazzcash_qr_url'] ?? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg') && (
+                        <div className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl shrink-0">
+                          <img
+                            src={String(settings['jazzcash_qr_url'] ?? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg')}
+                            alt="JazzCash QR Preview"
+                            className="w-16 h-16 object-contain rounded-lg"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Easypaisa Merchant Credentials */}
-                <div className="space-y-3 pt-4 border-t">
+                <div className="space-y-4 pt-4 border-t">
                   <h3 className="font-bold text-slate-900 text-sm border-b pb-2 flex items-center justify-between">
                     <span>Easypaisa Integration Credentials</span>
                     <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Official Adapter</span>
                   </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Merchant Account Name</label>
+                      <input
+                        type="text"
+                        value={settings['easypaisa_account_title'] ?? 'Omar Farooq'}
+                        onChange={(e) => setSettings({ ...settings, easypaisa_account_title: e.target.value })}
+                        placeholder="e.g. Omar Farooq"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Till ID</label>
+                      <input
+                        type="text"
+                        value={settings['easypaisa_till_id'] ?? ''}
+                        onChange={(e) => setSettings({ ...settings, easypaisa_till_id: e.target.value })}
+                        placeholder="Enter Easypaisa Till ID"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Account Number</label>
+                      <input
+                        type="text"
+                        value={settings['easypaisa_account_number'] ?? '03227796097'}
+                        onChange={(e) => setSettings({ ...settings, easypaisa_account_number: e.target.value })}
+                        placeholder="e.g. 03227796097"
+                        className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
+                      />
+                    </div>
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Store ID</label>
                       <input
                         type="text"
-                        value={settings['easypaisa_store_id'] || 'EP_STORE_9981'}
+                        value={settings['easypaisa_store_id'] ?? 'EP_STORE_9981'}
                         onChange={(e) => setSettings({ ...settings, easypaisa_store_id: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono"
                       />
@@ -3823,13 +3925,55 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Gateway Mode</label>
                       <select
-                        value={settings['easypaisa_sandbox'] || 'true'}
+                        value={String(settings['easypaisa_sandbox'] ?? 'true')}
                         onChange={(e) => setSettings({ ...settings, easypaisa_sandbox: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                       >
                         <option value="true">Sandbox (Safe Test Simulator)</option>
                         <option value="false">Live Production Merchant</option>
                       </select>
+                    </div>
+                  </div>
+
+                  {/* Easypaisa QR Image */}
+                  <div className="space-y-2">
+                    <label className="block font-semibold text-slate-700">Easypaisa QR Image</label>
+                    <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                      <div className="flex-1 w-full flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={settings['easypaisa_qr_url'] ?? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg'}
+                          onChange={(e) => setSettings({ ...settings, easypaisa_qr_url: e.target.value })}
+                          placeholder="Enter QR image URL or upload file"
+                          className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono"
+                        />
+                        {settings['easypaisa_qr_url'] && (
+                          <ImageMetaBadge url={String(settings['easypaisa_qr_url'])} recommended="500×500px" />
+                        )}
+                        <label className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl cursor-pointer text-xs font-semibold flex items-center gap-1.5 shrink-0">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload QR</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) =>
+                              handleImageUploadFile(e, (url) =>
+                                setSettings((prev: Record<string, any>) => ({ ...prev, easypaisa_qr_url: url }))
+                              )
+                            }
+                          />
+                        </label>
+                      </div>
+                      {(settings['easypaisa_qr_url'] ?? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg') && (
+                        <div className="p-1.5 bg-slate-50 border border-slate-200 rounded-xl shrink-0">
+                          <img
+                            src={String(settings['easypaisa_qr_url'] ?? '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg')}
+                            alt="Easypaisa QR Preview"
+                            className="w-16 h-16 object-contain rounded-lg"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

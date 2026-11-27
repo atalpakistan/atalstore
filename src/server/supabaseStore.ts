@@ -133,6 +133,13 @@ export async function getSupabaseDiagnostics(envObj?: any): Promise<{
 // 1. SETTINGS CRUD
 // -------------------------------------------------------------------
 
+const NUMERIC_SUPABASE_SETTING_KEYS = new Set([
+  'free_shipping_threshold',
+  'default_shipping_fee',
+  'min_order_amount',
+  'header_logo_height',
+]);
+
 export async function fetchSettingsFromSupabase(envObj?: any): Promise<Record<string, any> | null> {
   const client = getSupabaseClient(envObj);
   if (!client) return null;
@@ -147,8 +154,11 @@ export async function fetchSettingsFromSupabase(envObj?: any): Promise<Record<st
   for (const r of data) {
     if (r.value === 'true') settings[r.key] = true;
     else if (r.value === 'false') settings[r.key] = false;
-    else if (!isNaN(Number(r.value)) && r.value.trim() !== '') settings[r.key] = Number(r.value);
-    else settings[r.key] = r.value;
+    else if (NUMERIC_SUPABASE_SETTING_KEYS.has(r.key) && !isNaN(Number(r.value)) && r.value.trim() !== '') {
+      settings[r.key] = Number(r.value);
+    } else {
+      settings[r.key] = String(r.value ?? '');
+    }
   }
   return settings;
 }
