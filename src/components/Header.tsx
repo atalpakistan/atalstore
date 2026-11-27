@@ -4,7 +4,6 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useAuth } from '../context/AuthContext';
 import { StoreSettings } from '../types';
-import { AnimatedLogo } from './AnimatedLogo';
 
 interface HeaderProps {
   settings?: StoreSettings | null;
@@ -35,6 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   const [showAnnouncement, setShowAnnouncement] = useState(true);
 
   const announcementText = settings?.announcement_bar_text || '🇵🇰 Free Nationwide Delivery on orders above Rs. 9,999 | Rs. 290 Delivery Fee | 100% Genuine Guaranteed';
+  const logoUrl = settings?.header_logo_url || '/assets/aistudio/WhatsApp_Image_2026-09-29_at_12.21.56_PM_187de251.jpeg';
 
   return (
     <header className="sticky top-0 z-40 w-full shadow-md header-container mobile-friendly-header">
@@ -74,7 +74,14 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onNavigateHome}
               className="flex items-center gap-2.5 text-left group focus:outline-none"
             >
-              <AnimatedLogo logoUrl={settings?.header_logo_url} />
+              <img
+                src={logoUrl}
+                alt="ATAL Logo"
+                className="w-9 h-9 sm:w-11 sm:h-11 object-contain drop-shadow rounded-md"
+                onError={(e) => {
+                  (e.target as HTMLElement).style.display = 'none';
+                }}
+              />
               <div className="flex flex-col">
                 <span className="font-display font-bold text-xl sm:text-2xl tracking-wider text-amber-300 group-hover:text-amber-200 transition-colors">
                   ATAL
