@@ -28,7 +28,7 @@ import { CustomerDashboard } from './components/CustomerDashboard';
 import { PWAInstallButton } from './components/PWAInstallButton';
 
 import { Product, ProductVariant, HomepagePayload, StoreSettings } from './types';
-import { Loader2 } from 'lucide-react';
+import { AnimatedLogo } from './components/AnimatedLogo';
 
 function StorefrontApp() {
   const { user, isAdmin, openAuthModal } = useAuth();
@@ -248,9 +248,11 @@ function StorefrontApp() {
           /* HOMEPAGE IN EXACT SPECIFIED SECTION ORDER */
           <div>
             {loadingHomepage ? (
-              <div className="py-24 flex flex-col items-center justify-center text-slate-400">
-                <Loader2 className="w-10 h-10 animate-spin text-[#093824] mb-3" />
-                <p className="text-xs font-semibold">ATAL STORE — Smart Shop. Live Better...</p>
+              <div className="py-24 flex flex-col items-center justify-center text-slate-500 gap-4">
+                <AnimatedLogo logoUrl={homepageData?.settings?.header_logo_url} variant="loader" />
+                <p className="text-xs font-semibold tracking-wide text-[#093824]">
+                  ATAL STORE — Smart Shop. Live Better...
+                </p>
               </div>
             ) : (
               <>
