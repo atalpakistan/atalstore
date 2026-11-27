@@ -3,7 +3,7 @@ import {
   ArrowLeft, Heart, Star, Truck, ShieldCheck, RefreshCw, Share2,
   Check, AlertCircle, ShoppingBag, Zap, MessageCircle
 } from 'lucide-react';
-import { Product, ProductVariant } from '../types';
+import { Product, ProductVariant, StoreSettings } from '../types';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import {
@@ -17,6 +17,7 @@ import {
 
 interface ProductDetailPageProps {
   productSlugOrId: string;
+  settings?: StoreSettings | null;
   onBack: () => void;
   onNavigateProduct: (slug: string) => void;
   onBuyNow: (product: Product, variant?: ProductVariant, quantity?: number) => void;
@@ -24,6 +25,7 @@ interface ProductDetailPageProps {
 
 export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   productSlugOrId,
+  settings,
   onBack,
   onNavigateProduct,
   onBuyNow,
@@ -543,7 +545,10 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
           <div className="pt-4 border-t border-slate-100 space-y-2.5 text-xs text-slate-600">
             <div className="flex items-center gap-2.5">
               <Truck className="w-4 h-4 text-emerald-800 shrink-0" />
-              <span>Free delivery across Pakistan on orders above Rs. 3,000 (TCS / Leopard).</span>
+              <span>
+                Free delivery across Pakistan on orders above Rs.{' '}
+                {Number(settings?.free_shipping_threshold ?? 9999).toLocaleString('en-PK')} (TCS / Leopard).
+              </span>
             </div>
             <div className="flex items-center gap-2.5">
               <ShieldCheck className="w-4 h-4 text-emerald-800 shrink-0" />

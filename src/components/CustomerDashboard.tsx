@@ -20,7 +20,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
   onBackToStore,
   onNavigateProduct,
 }) => {
-  const { user, openAuthModal } = useAuth();
+  const { user, token, openAuthModal } = useAuth();
 
   const [activeTab, setActiveTab] = useState<'my_orders' | 'track_order' | 'profile'>('my_orders');
   const [searchInput, setSearchInput] = useState(initialOrderId);
@@ -38,13 +38,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
 
   // Fetch logged-in user orders
   const fetchMyOrders = async () => {
-    if (!user) return;
+    if (!user || !token) return;
     setLoadingOrders(true);
     setOrdersError('');
     try {
-      const token = localStorage.getItem('atal_auth_token');
       const { ok, data, error } = await safeFetchJson<Order[]>('/api/orders/my', {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (ok && Array.isArray(data)) {
         setUserOrders(data);
@@ -63,9 +62,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
 
   useEffect(() => {
     if (user) {
+      if (user.phone && !phoneInput) {
+        setPhoneInput(user.phone);
+      }
       fetchMyOrders();
     }
-  }, [user]);
+  }, [user, token]);
 
   useEffect(() => {
     if (initialOrderId) {

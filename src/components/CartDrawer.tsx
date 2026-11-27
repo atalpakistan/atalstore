@@ -2,11 +2,14 @@ import React from 'react';
 import { X, ShoppingBag, Trash2, ArrowRight, Truck } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 
+import { StoreSettings } from '../types';
+
 interface CartDrawerProps {
+  settings?: StoreSettings | null;
   onProceedCheckout: () => void;
 }
 
-export const CartDrawer: React.FC<CartDrawerProps> = ({ onProceedCheckout }) => {
+export const CartDrawer: React.FC<CartDrawerProps> = ({ settings, onProceedCheckout }) => {
   const {
     items,
     isCartOpen,
@@ -15,12 +18,20 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onProceedCheckout }) => 
     updateQuantity,
     subtotal,
     freeShippingThreshold,
-    amountToFreeShipping,
   } = useCart();
 
   if (!isCartOpen) return null;
 
-  const progressPercent = Math.min(100, Math.round((subtotal / freeShippingThreshold) * 100));
+  const effectiveThreshold =
+    settings?.free_shipping_threshold !== undefined && settings?.free_shipping_threshold !== null
+      ? Number(settings.free_shipping_threshold)
+      : freeShippingThreshold;
+  const effectiveShippingFee =
+    settings?.default_shipping_fee !== undefined && settings?.default_shipping_fee !== null
+      ? Number(settings.default_shipping_fee)
+      : 290;
+  const effectiveAmountToFree = Math.max(0, effectiveThreshold - subtotal);
+  const progressPercent = effectiveThreshold > 0 ? Math.min(100, Math.round((subtotal / effectiveThreshold) * 100)) : 100;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -56,9 +67,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onProceedCheckout }) => 
           <div className="flex items-center justify-between font-medium text-emerald-900 mb-1.5">
             <span className="flex items-center gap-1.5">
               <Truck className="w-4 h-4 text-emerald-700" />
-              {amountToFreeShipping > 0 ? (
+              {effectiveAmountToFree > 0 ? (
                 <span>
-                  Add <strong className="text-emerald-950 font-bold tabular-nums">Rs. {amountToFreeShipping.toLocaleString('en-PK')}</strong> for <strong>Free Delivery</strong>
+                  Add <strong className="text-emerald-950 font-bold tabular-nums">Rs. {effectiveAmountToFree.toLocaleString('en-PK')}</strong> for <strong>Free Delivery</strong>
                 </span>
               ) : (
                 <span className="text-emerald-800 font-bold">🎉 You qualify for FREE Nationwide Delivery!</span>
@@ -177,7 +188,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({ onProceedCheckout }) => 
             <div className="flex items-center justify-between text-xs text-slate-500 mb-4">
               <span>Shipping Fee</span>
               <span className="font-medium text-emerald-800">
-                {subtotal >= freeShippingThreshold ? 'FREE' : 'Rs. 290 (Calculated at checkout)'}
+                {subtotal >= effectiveThreshold || effectiveShippingFee === 0
+                  ? 'FREE'
+                  : `Rs. ${effectiveShippingFee.toLocaleString('en-PK')} (Calculated at checkout)`}
               </span>
             </div>
 

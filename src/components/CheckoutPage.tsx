@@ -162,9 +162,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
   // Shipping rules & COD Advance Shipping toggle
   const activeSettings = liveSettings || settings;
-  const freeThreshold = activeSettings?.free_shipping_threshold || 9999;
-  const defaultFee = activeSettings?.default_shipping_fee || 290;
+  const freeThreshold =
+    activeSettings?.free_shipping_threshold !== undefined && activeSettings?.free_shipping_threshold !== null
+      ? Number(activeSettings.free_shipping_threshold)
+      : 9999;
+  const defaultFee =
+    activeSettings?.default_shipping_fee !== undefined && activeSettings?.default_shipping_fee !== null
+      ? Number(activeSettings.default_shipping_fee)
+      : 290;
   const isCodEnabled = activeSettings?.cod_enabled !== false && String(activeSettings?.cod_enabled) !== 'false';
+  const isJazzCashEnabled = activeSettings?.jazzcash_enabled !== false && String(activeSettings?.jazzcash_enabled) !== 'false';
+  const isEasypaisaEnabled = activeSettings?.easypaisa_enabled !== false && String(activeSettings?.easypaisa_enabled) !== 'false';
   const isCodAdvanceShippingRequired =
     activeSettings?.delivery_advance_mandatory !== false &&
     String(activeSettings?.delivery_advance_mandatory) !== 'false';
@@ -185,10 +193,17 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   );
 
   useEffect(() => {
-    if (!isCodEnabled && paymentMethod === 'cod') {
-      setPaymentMethod('jazzcash');
+    if (paymentMethod === 'cod' && !isCodEnabled) {
+      if (isJazzCashEnabled) setPaymentMethod('jazzcash');
+      else if (isEasypaisaEnabled) setPaymentMethod('easypaisa');
+    } else if (paymentMethod === 'jazzcash' && !isJazzCashEnabled) {
+      if (isCodEnabled) setPaymentMethod('cod');
+      else if (isEasypaisaEnabled) setPaymentMethod('easypaisa');
+    } else if (paymentMethod === 'easypaisa' && !isEasypaisaEnabled) {
+      if (isCodEnabled) setPaymentMethod('cod');
+      else if (isJazzCashEnabled) setPaymentMethod('jazzcash');
     }
-  }, [isCodEnabled, paymentMethod]);
+  }, [isCodEnabled, isJazzCashEnabled, isEasypaisaEnabled, paymentMethod]);
 
   const shippingFee = subtotal >= freeThreshold ? 0 : defaultFee;
   const discountAmount = appliedCoupon ? appliedCoupon.discount : 0;
@@ -340,14 +355,14 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       invalidateProductCache();
       invalidateHomepageCache();
 
-      // 2. If Cash on Delivery, complete immediately
-      if (paymentMethod === 'cod') {
+      // 2. Manual transfers (COD or JazzCash/Easypaisa QR/Account transfer with Transaction ID) stay pending verification
+      if (paymentMethod === 'cod' || transactionId.trim().length > 0) {
         clearCart();
         onOrderSuccess(orderId);
         return;
       }
 
-      // 3. If JazzCash or Easypaisa, initiate payment flow
+      // 3. Hosted gateway fallback when no manual Transaction ID is required
       const payRes = await fetch('/api/payments/initiate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -355,22 +370,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       });
 
       const payData = await payRes.json();
-      if (payData.isSandbox) {
-        // Safe automated test mode simulation for evaluation & testing
-        const confirmRes = await fetch('/api/payments/test-confirm', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ order_id: orderId, gateway: paymentMethod, status: 'success' })
-        });
-        if (confirmRes.ok) {
-          clearCart();
-          onOrderSuccess(orderId);
-          return;
-        }
-      }
-
-      // If live merchant integration, auto-submit POST form
-      if (payData.endpoint && payData.payload) {
+      if (payData.endpoint && payData.payload && !payData.isSandbox) {
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = payData.endpoint;
@@ -633,68 +633,72 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               )}
 
               {/* JazzCash Option */}
-              <label
-                className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
-                  paymentMethod === 'jazzcash'
-                    ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === 'jazzcash'}
-                  onChange={() => setPaymentMethod('jazzcash')}
-                  className="mt-1 accent-[#093824]"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-rose-600" />
-                      JazzCash Mobile Transfer
-                    </span>
-                    <span className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded">
-                      QR Code Available
-                    </span>
+              {isJazzCashEnabled && (
+                <label
+                  className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
+                    paymentMethod === 'jazzcash'
+                      ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    checked={paymentMethod === 'jazzcash'}
+                    onChange={() => setPaymentMethod('jazzcash')}
+                    className="mt-1 accent-[#093824]"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-rose-600" />
+                        JazzCash Mobile Transfer
+                      </span>
+                      <span className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded">
+                        QR Code Available
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Transfer full amount to {jcAccountName} ({jcAccountNumber})
+                      {jcTillId ? ` · Till ID: ${jcTillId}` : ''} and enter Transaction ID below.
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Transfer full amount to {jcAccountName} ({jcAccountNumber})
-                    {jcTillId ? ` · Till ID: ${jcTillId}` : ''} and enter Transaction ID below.
-                  </p>
-                </div>
-              </label>
+                </label>
+              )}
 
               {/* Easypaisa Option */}
-              <label
-                className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
-                  paymentMethod === 'easypaisa'
-                    ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
-                    : 'border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="payment"
-                  checked={paymentMethod === 'easypaisa'}
-                  onChange={() => setPaymentMethod('easypaisa')}
-                  className="mt-1 accent-[#093824]"
-                />
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-emerald-600" />
-                      Easypaisa Mobile Transfer
-                    </span>
-                    <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                      QR Code Available
-                    </span>
+              {isEasypaisaEnabled && (
+                <label
+                  className={`flex items-start gap-4 p-4 rounded-2xl border-2 cursor-pointer transition ${
+                    paymentMethod === 'easypaisa'
+                      ? 'border-[#093824] bg-emerald-50/50 shadow-sm'
+                      : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="payment"
+                    checked={paymentMethod === 'easypaisa'}
+                    onChange={() => setPaymentMethod('easypaisa')}
+                    className="mt-1 accent-[#093824]"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <CreditCard className="w-4 h-4 text-emerald-600" />
+                        Easypaisa Mobile Transfer
+                      </span>
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
+                        QR Code Available
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Transfer full amount to {epAccountName} ({epAccountNumber})
+                      {epTillId ? ` · Till ID: ${epTillId}` : ''} and enter Transaction ID below.
+                    </p>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Transfer full amount to {epAccountName} ({epAccountNumber})
-                    {epTillId ? ` · Till ID: ${epTillId}` : ''} and enter Transaction ID below.
-                  </p>
-                </div>
-              </label>
+                </label>
+              )}
             </div>
 
             {/* Account Details & QR Code display based on selected payment method */}

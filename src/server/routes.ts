@@ -3,8 +3,10 @@ import crypto from 'crypto';
 import path from 'path';
 import fs from 'fs';
 import { db, hashPassword } from './db.js';
+import { getRuntimeAuthSecret, TOKEN_MAX_AGE_MS } from './authToken.js';
 import { JazzCashGateway, EasypaisaGateway } from './payments.js';
 import {
+  getSupabaseClient,
   isSupabaseConfigured,
   getSupabaseDiagnostics,
   fetchSettingsFromSupabase,
@@ -51,25 +53,69 @@ function safeJsonParse<T>(val: string | null | undefined, fallback: T): T {
   }
 }
 
-// Simple Session / Token Verification
+function signAuthTokenSync(userId: string, role: string): string {
+  const cleanUserId = String(userId).replace(/:/g, '_');
+  const cleanRole = String(role || 'customer').replace(/:/g, '_');
+  const issuedAt = Date.now();
+  const payload = `${cleanUserId}:${cleanRole}:${issuedAt}`;
+  const sigHex = crypto
+    .createHmac('sha256', getRuntimeAuthSecret())
+    .update(payload)
+    .digest('hex');
+  return Buffer.from(`${payload}:${sigHex}`, 'utf-8').toString('base64');
+}
+
+function verifyAuthTokenSync(token: string): { userId: string; role: string } | null {
+  try {
+    const decoded = Buffer.from(token.trim(), 'base64').toString('utf-8');
+    const parts = decoded.split(':');
+    if (parts.length !== 4) return null;
+
+    const [userId, role, tsStr, sigHex] = parts;
+    if (!userId || !role || !tsStr || !sigHex || !/^[0-9a-f]{64}$/i.test(sigHex)) {
+      return null;
+    }
+
+    const issuedAt = Number(tsStr);
+    const now = Date.now();
+    if (!Number.isFinite(issuedAt) || issuedAt > now + 5 * 60 * 1000 || now - issuedAt > TOKEN_MAX_AGE_MS) {
+      return null;
+    }
+
+    const expectedHex = crypto
+      .createHmac('sha256', getRuntimeAuthSecret())
+      .update(`${userId}:${role}:${tsStr}`)
+      .digest('hex');
+
+    const providedBuf = Buffer.from(sigHex.toLowerCase(), 'hex');
+    const expectedBuf = Buffer.from(expectedHex.toLowerCase(), 'hex');
+    if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+      return null;
+    }
+
+    return { userId, role };
+  } catch {
+    return null;
+  }
+}
+
+// Signed Session / Token Verification
 function getAuthenticatedUser(req: Request) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return null;
-  const token = authHeader.replace(/^Bearer\s+/i, '');
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
   if (!token) return null;
 
-  try {
-    // Format: base64(userId:timestamp:signature)
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const [userId, role] = decoded.split(':');
-    if (!userId) return null;
+  const verified = verifyAuthTokenSync(token);
+  if (!verified) return null;
 
-    let user = db.prepare('SELECT id, email, full_name, phone, role FROM customers WHERE id = ?').get(userId) as any;
+  try {
+    let user = db.prepare('SELECT id, email, full_name, phone, role FROM customers WHERE id = ?').get(verified.userId) as any;
     if (!user) {
-      if (userId === 'usr_admin_uatal' || role === 'admin') {
-        user = { id: 'usr_admin_uatal', email: 'uatal.pk@gmail.com', full_name: 'Umer (Administrator)', role: 'admin' };
-      } else if (userId === 'usr_emp_ali' || role === 'employee') {
-        user = { id: 'usr_emp_ali', email: 'ali@atal.com', full_name: 'Ali (Store Manager)', role: 'employee' };
+      if (verified.userId === 'usr_admin_uatal') {
+        user = { id: 'usr_admin_uatal', email: 'uatal.pk@gmail.com', full_name: 'Umer (Administrator)', phone: '03719150297', role: 'admin' };
+      } else if (verified.userId === 'usr_emp_ali') {
+        user = { id: 'usr_emp_ali', email: 'ali@atal.com', full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' };
       }
     }
     return user || null;
@@ -445,12 +491,24 @@ router.post('/coupons/validate', (req, res) => {
     const { code, subtotal } = req.body;
     if (!code) return res.status(400).json({ error: 'Coupon code required' });
 
-    const coupon = db.prepare('SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND is_active = 1').get(code) as any;
+    const numericSubtotal = Math.max(0, Number(subtotal) || 0);
+    const coupon = db.prepare('SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND is_active = 1').get(String(code).trim()) as any;
     if (!coupon) {
       return res.status(404).json({ error: 'Invalid or expired coupon code' });
     }
 
-    if (coupon.min_order_amount && subtotal < coupon.min_order_amount) {
+    if (coupon.expires_at) {
+      const expMs = new Date(coupon.expires_at).getTime();
+      if (!isNaN(expMs) && expMs <= Date.now()) {
+        return res.status(400).json({ error: 'This coupon code has expired.' });
+      }
+    }
+
+    if (coupon.usage_limit && Number(coupon.usage_count || 0) >= Number(coupon.usage_limit)) {
+      return res.status(400).json({ error: 'This coupon has reached its maximum usage limit.' });
+    }
+
+    if (coupon.min_order_amount && numericSubtotal < coupon.min_order_amount) {
       return res.status(400).json({
         error: `This coupon requires a minimum order of Rs. ${coupon.min_order_amount.toLocaleString('en-PK')}`
       });
@@ -458,7 +516,7 @@ router.post('/coupons/validate', (req, res) => {
 
     let discount = 0;
     if (coupon.discount_type === 'percentage') {
-      discount = (subtotal * coupon.discount_value) / 100;
+      discount = (numericSubtotal * coupon.discount_value) / 100;
       if (coupon.max_discount && discount > coupon.max_discount) {
         discount = coupon.max_discount;
       }
@@ -466,7 +524,7 @@ router.post('/coupons/validate', (req, res) => {
       discount = coupon.discount_value;
     }
 
-    discount = Math.min(discount, subtotal);
+    discount = Math.min(discount, numericSubtotal);
 
     res.json({
       valid: true,
@@ -484,7 +542,7 @@ router.post('/coupons/validate', (req, res) => {
 // 4. TRANSACTIONAL ORDERS & CHECKOUT
 // -------------------------------------------------------------
 
-router.post('/orders', (req, res) => {
+router.post('/orders', async (req, res) => {
   try {
     const {
       customer_id,
@@ -497,7 +555,7 @@ router.post('/orders', (req, res) => {
       street_address,
       landmark,
       order_notes,
-      payment_method, // 'cod' | 'jazzcash' | 'easypaisa' | 'hbl'
+      payment_method, // 'cod' | 'jazzcash' | 'easypaisa'
       transaction_id,
       coupon_code,
       items // Array of { product_id, variant_id, quantity }
@@ -514,31 +572,61 @@ router.post('/orders', (req, res) => {
       return res.status(400).json({ error: 'Missing required shipping information or empty order items' });
     }
 
-    if (payment_method === 'cod') {
+    const normalizedMethod = String(payment_method || 'cod').toLowerCase();
+    if (!['cod', 'jazzcash', 'easypaisa'].includes(normalizedMethod)) {
+      return res.status(400).json({ error: 'Unsupported payment method selected.' });
+    }
+
+    if (normalizedMethod === 'cod') {
       const codEnabledRow = db.prepare("SELECT value FROM settings WHERE key = 'cod_enabled'").get() as { value: string } | undefined;
       if (codEnabledRow && codEnabledRow.value === 'false') {
         return res.status(400).json({ error: 'Cash on Delivery (COD) is currently disabled by the store administrator.' });
+      }
+    } else if (normalizedMethod === 'jazzcash') {
+      const jcEnabledRow = db.prepare("SELECT value FROM settings WHERE key = 'jazzcash_enabled'").get() as { value: string } | undefined;
+      if (jcEnabledRow && jcEnabledRow.value === 'false') {
+        return res.status(400).json({ error: 'JazzCash is currently disabled by the store administrator.' });
+      }
+    } else if (normalizedMethod === 'easypaisa') {
+      const epEnabledRow = db.prepare("SELECT value FROM settings WHERE key = 'easypaisa_enabled'").get() as { value: string } | undefined;
+      if (epEnabledRow && epEnabledRow.value === 'false') {
+        return res.status(400).json({ error: 'Easypaisa is currently disabled by the store administrator.' });
       }
     }
 
     const advSettingRow = db.prepare("SELECT value FROM settings WHERE key = 'delivery_advance_mandatory'").get() as { value: string } | undefined;
     const isAdvanceMandatory = advSettingRow ? advSettingRow.value !== 'false' : true;
-    const requiresTxId = payment_method !== 'cod' || isAdvanceMandatory;
+    const requiresTxId = normalizedMethod !== 'cod' || isAdvanceMandatory;
 
-    if (requiresTxId && (!transaction_id || !transaction_id.trim())) {
+    if (requiresTxId && (!transaction_id || !String(transaction_id).trim())) {
       return res.status(400).json({
-        error: payment_method === 'cod'
+        error: normalizedMethod === 'cod'
           ? 'Transaction ID / Receipt Number for advance shipping payment is required.'
           : 'Transaction ID / Receipt Number is mandatory for this payment option.'
       });
     }
 
-    // Get shipping fee rules from settings
+    // Get shipping fee rules from settings (respecting 0 properly)
     const freeThresholdRow = db.prepare("SELECT value FROM settings WHERE key = 'free_shipping_threshold'").get() as { value: string } | undefined;
-    const freeThreshold = Number(freeThresholdRow?.value || 9999);
+    const freeThreshold =
+      freeThresholdRow?.value !== undefined && freeThresholdRow.value !== ''
+        ? Number(freeThresholdRow.value)
+        : 9999;
 
     const standardShippingFeeRow = db.prepare("SELECT value FROM settings WHERE key = 'default_shipping_fee'").get() as { value: string } | undefined;
-    const standardShippingFee = Number(standardShippingFeeRow?.value || 290);
+    const standardShippingFee =
+      standardShippingFeeRow?.value !== undefined && standardShippingFeeRow.value !== ''
+        ? Number(standardShippingFeeRow.value)
+        : 290;
+
+    const notificationsToSync: Array<{
+      type: 'new_order' | 'low_stock';
+      title: string;
+      message: string;
+      link: string;
+      entity_id: string;
+    }> = [];
+    const stockUpdatesToSync: Array<{ product_id: string; new_stock: number }> = [];
 
     // Execute atomic transaction for inventory check, stock deduction & order creation
     const createOrderTx = db.transaction(() => {
@@ -555,36 +643,27 @@ router.post('/orders', (req, res) => {
       }> = [];
 
       for (const item of items) {
+        const parsedQuantity = Math.floor(Number(item.quantity));
+        if (!Number.isFinite(parsedQuantity) || parsedQuantity < 1) {
+          throw new Error('Each order item must have a valid positive quantity.');
+        }
+
         const targetPid = item.product_id || item.id;
-        // Lookup product by ID or slug
-        let prod = db.prepare('SELECT id, name, sale_price, available_stock, images FROM products WHERE id = ? OR slug = ?').get(targetPid, targetPid) as any;
+        let prod = db.prepare('SELECT id, name, sku, sale_price, available_stock, low_stock_threshold, images FROM products WHERE id = ? OR slug = ?').get(targetPid, targetPid) as any;
         if (!prod && item.product_name) {
-          prod = db.prepare('SELECT id, name, sale_price, available_stock, images FROM products WHERE name = ?').get(item.product_name) as any;
+          prod = db.prepare('SELECT id, name, sku, sale_price, available_stock, low_stock_threshold, images FROM products WHERE name = ?').get(item.product_name) as any;
         }
 
         if (!prod) {
-          console.warn(`⚠️ [Product Lookup Warning] Product "${targetPid}" not found by ID. Using client fallback name.`);
-          prod = {
-            id: targetPid || `prod_${Date.now()}`,
-            name: item.product_name || item.name || 'Product',
-            sale_price: Number(item.unit_price || item.price || 0),
-            available_stock: 99,
-            images: item.image_url || item.image ? JSON.stringify([item.image_url || item.image]) : '[]'
-          };
+          throw new Error(`Product "${targetPid || item.product_name || 'item'}" was not found or is no longer available.`);
         }
-
-        console.log(`🔍 [Database Price Fetch] Product ID: ${prod.id} (${prod.name}) | DB sale_price: ${prod.sale_price} | Variant ID: ${item.variant_id || 'None'}`);
 
         let canonicalUnitPrice = Number(prod.sale_price);
         let variantTitle: string | null = item.variant_title || item.variant_name || null;
-        
+
         // Product image extraction
         let itemImg = '/icon.svg';
-        if (item.image_url) {
-          itemImg = item.image_url;
-        } else if (item.image) {
-          itemImg = item.image;
-        } else if (prod.images) {
+        if (prod.images) {
           if (typeof prod.images === 'string') {
             try {
               const parsed = JSON.parse(prod.images);
@@ -600,67 +679,56 @@ router.post('/orders', (req, res) => {
 
         if (item.variant_id) {
           const variant = db.prepare('SELECT * FROM product_variants WHERE id = ? AND product_id = ?').get(item.variant_id, prod.id) as any;
-          if (variant) {
-            console.log(`🔍 [Database Variant Price Fetch] Variant ID: ${variant.id} | DB variant price: ${variant.price}`);
-            if (variant.price !== undefined && variant.price !== null && Number(variant.price) > 0) {
-              canonicalUnitPrice = Number(variant.price);
-            }
-            variantTitle = `${variant.color_name || ''} ${variant.size || ''}`.trim() || variantTitle;
-            if (variant.image_url) itemImg = variant.image_url;
-            if (variant.stock < item.quantity) {
-              throw new Error(`Insufficient stock for ${prod.name} (${variantTitle}). Only ${variant.stock} left.`);
-            }
-            db.prepare('UPDATE product_variants SET stock = stock - ? WHERE id = ?').run(item.quantity, item.variant_id);
+          if (!variant) {
+            throw new Error(`Selected option for "${prod.name}" is no longer available.`);
           }
+          if (variant.price !== undefined && variant.price !== null && Number(variant.price) > 0) {
+            canonicalUnitPrice = Number(variant.price);
+          }
+          variantTitle = `${variant.color_name || ''} ${variant.size || ''}`.trim() || variantTitle;
+          if (variant.image_url) itemImg = variant.image_url;
+          if (variant.stock < parsedQuantity) {
+            throw new Error(`Insufficient stock for ${prod.name} (${variantTitle}). Only ${variant.stock} left.`);
+          }
+          db.prepare('UPDATE product_variants SET stock = stock - ? WHERE id = ?').run(parsedQuantity, item.variant_id);
         }
 
         if (isNaN(canonicalUnitPrice) || canonicalUnitPrice <= 0) {
-          const clientPrice = Number(item.unit_price || item.price || item.sale_price);
-          console.warn(`⚠️ [Price Fallback] Database price was zero/invalid. Fallback client price: ${clientPrice}`);
-          if (!isNaN(clientPrice) && clientPrice > 0) {
-            canonicalUnitPrice = clientPrice;
-          }
-        }
-
-        if (prod.available_stock < item.quantity) {
-          throw new Error(`Insufficient stock for ${prod.name}. Available: ${prod.available_stock}`);
-        }
-
-        // Deduct product stock
-        if (prod.id) {
-          db.prepare("UPDATE products SET available_stock = available_stock - ?, updated_at = datetime('now') WHERE id = ?").run(item.quantity, prod.id);
-        }
-
-        const parsedUnitPrice = canonicalUnitPrice;
-        const parsedQuantity = Number(item.quantity) || 1;
-
-        if (isNaN(parsedUnitPrice) || parsedUnitPrice <= 0) {
-          console.error(`🚨 [Order Error] Invalid or zero unit price for product ${prod.name} (ID: ${prod.id}):`, canonicalUnitPrice);
           throw new Error(`Product "${prod.name}" has an invalid price (Rs. ${canonicalUnitPrice}). Cannot process order.`);
         }
 
-        const lineTotal = parsedUnitPrice * parsedQuantity;
-        subtotal += lineTotal;
+        if (prod.available_stock < parsedQuantity) {
+          throw new Error(`Insufficient stock for ${prod.name}. Available: ${prod.available_stock}`);
+        }
 
-        console.log(`📦 [Order Item Pricing Audit] Product: "${prod.name}" | Unit Price: Rs. ${parsedUnitPrice} | Qty: ${parsedQuantity} | Line Total: Rs. ${lineTotal}`);
+        const nextStock = Math.max(0, Number(prod.available_stock) - parsedQuantity);
+        db.prepare("UPDATE products SET available_stock = ?, updated_at = datetime('now') WHERE id = ?").run(nextStock, prod.id);
+        stockUpdatesToSync.push({ product_id: prod.id, new_stock: nextStock });
+
+        const lineTotal = canonicalUnitPrice * parsedQuantity;
+        subtotal += lineTotal;
 
         orderItemsToInsert.push({
           id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           product_id: prod.id,
           product_name: prod.name,
           variant_title: variantTitle,
-          price: parsedUnitPrice,
+          price: canonicalUnitPrice,
           quantity: parsedQuantity,
           image_url: itemImg,
           total: lineTotal
         });
       }
 
-      // Calculate coupon discount
+      // Calculate coupon discount with usage_limit & expires_at checks
       let discount = 0;
       if (coupon_code) {
-        const coupon = db.prepare('SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND is_active = 1').get(coupon_code) as any;
-        if (coupon && (!coupon.min_order_amount || subtotal >= coupon.min_order_amount)) {
+        const coupon = db.prepare('SELECT * FROM coupons WHERE UPPER(code) = UPPER(?) AND is_active = 1').get(String(coupon_code).trim()) as any;
+        const notExpired = !coupon?.expires_at || isNaN(new Date(coupon.expires_at).getTime()) || new Date(coupon.expires_at).getTime() > Date.now();
+        const withinLimit = !coupon?.usage_limit || Number(coupon.usage_count || 0) < Number(coupon.usage_limit);
+        const meetsMin = !coupon?.min_order_amount || subtotal >= coupon.min_order_amount;
+
+        if (coupon && notExpired && withinLimit && meetsMin) {
           if (coupon.discount_type === 'percentage') {
             discount = (subtotal * coupon.discount_value) / 100;
             if (coupon.max_discount && discount > coupon.max_discount) discount = coupon.max_discount;
@@ -668,14 +736,12 @@ router.post('/orders', (req, res) => {
             discount = coupon.discount_value;
           }
           discount = Math.min(discount, subtotal);
-          // Increment coupon usage
           db.prepare('UPDATE coupons SET usage_count = usage_count + 1 WHERE id = ?').run(coupon.id);
         }
       }
 
-      // Shipping calculation (free over 9999)
       const shipping_fee = subtotal >= freeThreshold ? 0 : standardShippingFee;
-      const total_amount = subtotal - discount + shipping_fee;
+      const total_amount = Math.max(0, subtotal - discount + shipping_fee);
 
       // Generate clean, guaranteed 9-digit numeric trackable order number (e.g. 901827463)
       let orderId = Math.floor(100000000 + Math.random() * 900000000).toString();
@@ -685,11 +751,10 @@ router.post('/orders', (req, res) => {
         attempts++;
       }
 
-      const initialPaymentStatus = payment_method === 'cod' ? 'pending' : 'pending';
+      const initialPaymentStatus = 'pending';
       const initialOrderStatus = 'Pending';
       const cleanTxId = (transaction_id || '').trim();
 
-      // Insert Order
       db.prepare(`
         INSERT INTO orders (
           id, customer_id, customer_name, customer_email, phone, province, city, area, street_address, landmark,
@@ -699,11 +764,10 @@ router.post('/orders', (req, res) => {
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
       `).run(
-        orderId, customer_id || null, customer_name, customer_email || null, cleanPhone, province, city, area || city || 'Central', street_address, landmark || null,
-        order_notes || null, subtotal, discount, shipping_fee, total_amount, payment_method, initialPaymentStatus, initialOrderStatus, cleanTxId, cleanTxId
+        orderId, customer_id || null, String(customer_name).trim(), customer_email || null, cleanPhone, province, city, area || city || 'Central', street_address, landmark || null,
+        order_notes || null, subtotal, discount, shipping_fee, total_amount, normalizedMethod, initialPaymentStatus, initialOrderStatus, cleanTxId, cleanTxId
       );
 
-      // Insert Order Items
       const insertItemStmt = db.prepare(`
         INSERT INTO order_items (id, order_id, product_id, product_name, variant_title, price, quantity, image_url, total)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -712,36 +776,39 @@ router.post('/orders', (req, res) => {
         insertItemStmt.run(it.id, orderId, it.product_id, it.product_name, it.variant_title, it.price, it.quantity, it.image_url, it.total);
       }
 
-      // Insert Order Notifications
+      // Insert Order & Low Stock Notifications
       try {
+        const orderNotif = {
+          type: 'new_order' as const,
+          title: `🛒 New Order #${orderId}`,
+          message: `New order of Rs. ${total_amount.toLocaleString('en-PK')} placed by ${customer_name} (${cleanPhone}).`,
+          link: `/admin/orders?order=${orderId}`,
+          entity_id: orderId
+        };
         const notifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
         db.prepare(`
           INSERT INTO notifications (id, type, title, message, link, entity_id)
           VALUES (?, 'new_order', ?, ?, ?, ?)
-        `).run(
-          notifId,
-          `🛒 New Order #${orderId}`,
-          `New order of Rs. ${total_amount.toLocaleString('en-PK')} placed by ${customer_name} (${cleanPhone}).`,
-          `/admin/orders?order=${orderId}`,
-          orderId
-        );
+        `).run(notifId, orderNotif.title, orderNotif.message, orderNotif.link, orderNotif.entity_id);
+        notificationsToSync.push(orderNotif);
 
-        // Check low stock triggers for each item
         for (const it of orderItemsToInsert) {
           if (it.product_id) {
             const pInfo = db.prepare('SELECT id, name, sku, available_stock, low_stock_threshold FROM products WHERE id = ?').get(it.product_id) as any;
             if (pInfo && pInfo.available_stock <= (pInfo.low_stock_threshold ?? 5)) {
+              const lowStockNotif = {
+                type: 'low_stock' as const,
+                title: `⚠️ Low Stock Alert: ${pInfo.name}`,
+                message: `Inventory for "${pInfo.name}" (${pInfo.sku}) dropped to ${pInfo.available_stock} units (Threshold: ${pInfo.low_stock_threshold ?? 5}).`,
+                link: `/admin/products?search=${encodeURIComponent(pInfo.sku || pInfo.name)}`,
+                entity_id: pInfo.id
+              };
               const lNotifId = `notif_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
               db.prepare(`
                 INSERT INTO notifications (id, type, title, message, link, entity_id)
                 VALUES (?, 'low_stock', ?, ?, ?, ?)
-              `).run(
-                lNotifId,
-                `⚠️ Low Stock Alert: ${pInfo.name}`,
-                `Inventory for "${pInfo.name}" (${pInfo.sku}) dropped to ${pInfo.available_stock} units (Threshold: ${pInfo.low_stock_threshold ?? 5}).`,
-                `/admin/products?search=${encodeURIComponent(pInfo.sku || pInfo.name)}`,
-                pInfo.id
-              );
+              `).run(lNotifId, lowStockNotif.title, lowStockNotif.message, lowStockNotif.link, lowStockNotif.entity_id);
+              notificationsToSync.push(lowStockNotif);
             }
           }
         }
@@ -749,7 +816,6 @@ router.post('/orders', (req, res) => {
         console.warn('Failed to insert SQLite notification:', nErr);
       }
 
-      // Record Audit
       db.prepare(`
         INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details)
         VALUES (?, ?, 'ORDER_CREATED', 'ORDER', ?, ?)
@@ -757,7 +823,7 @@ router.post('/orders', (req, res) => {
         `aud_${Date.now()}`,
         customer_id || 'guest',
         orderId,
-        JSON.stringify({ total: total_amount, payment_method, phone: cleanPhone, transaction_id: cleanTxId })
+        JSON.stringify({ total: total_amount, payment_method: normalizedMethod, phone: cleanPhone, transaction_id: cleanTxId })
       );
 
       return {
@@ -776,7 +842,7 @@ router.post('/orders', (req, res) => {
         discount,
         shipping_fee,
         total_amount,
-        payment_method,
+        payment_method: normalizedMethod,
         payment_status: initialPaymentStatus,
         order_status: initialOrderStatus,
         transaction_id: cleanTxId,
@@ -785,6 +851,24 @@ router.post('/orders', (req, res) => {
     });
 
     const result = createOrderTx();
+
+    // Best-effort sync of notifications to Supabase so GET /admin/notifications never misses SQLite orders
+    if (isSupabaseConfigured()) {
+      for (const n of notificationsToSync) {
+        try {
+          await createNotificationInSupabase(n);
+        } catch {}
+      }
+      const sbClient = getSupabaseClient();
+      if (sbClient) {
+        for (const s of stockUpdatesToSync) {
+          try {
+            await sbClient.from('products').update({ available_stock: s.new_stock }).eq('id', s.product_id);
+          } catch {}
+        }
+      }
+    }
+
     res.json({
       success: true,
       orderId: result.orderId,
@@ -877,6 +961,29 @@ function normalizeOrder(order: any) {
 
   return order;
 }
+
+router.get('/orders/my', (req, res) => {
+  const user = getAuthenticatedUser(req);
+  if (!user) return res.status(401).json({ error: 'Please log in to view your orders' });
+
+  const cleanPhone = user.phone ? user.phone.replace(/\D/g, '').slice(-10) : '';
+
+  const rawOrders = db.prepare(`
+    SELECT * FROM orders 
+    WHERE customer_id = ? 
+       OR (customer_email IS NOT NULL AND LOWER(customer_email) = LOWER(?))
+       OR (phone IS NOT NULL AND LENGTH(?) > 5 AND REPLACE(REPLACE(phone, ' ', ''), '-', '') LIKE ?)
+    ORDER BY created_at DESC
+  `).all(
+    user.id,
+    user.email,
+    cleanPhone,
+    `%${cleanPhone}%`
+  ) as any[];
+
+  const orders = rawOrders.map(o => normalizeOrder(o));
+  res.json(orders);
+});
 
 // Order Lookup / Confirmation Detail
 router.get('/orders/:id', (req, res) => {
@@ -1068,12 +1175,27 @@ router.all('/payments/easypaisa/callback', (req, res) => {
   }
 });
 
-// Test Simulation Confirm Endpoint (Safe Test Mode for Evaluation & Testing)
+// Test Simulation Confirm Endpoint (Restricted to active Sandbox mode or Admin staff)
 router.post('/payments/test-confirm', (req, res) => {
   try {
     const { order_id, gateway, status = 'success' } = req.body;
+    if (!order_id || (gateway !== 'jazzcash' && gateway !== 'easypaisa')) {
+      return res.status(400).json({ error: 'Valid order_id and supported gateway (jazzcash or easypaisa) required' });
+    }
+
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(order_id) as any;
     if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const authUser = getAuthenticatedUser(req);
+    const isStaff = authUser && (authUser.role === 'admin' || authUser.role === 'employee');
+
+    const sandboxKey = gateway === 'jazzcash' ? 'jazzcash_sandbox' : 'easypaisa_sandbox';
+    const sandboxRow = db.prepare('SELECT value FROM settings WHERE key = ?').get(sandboxKey) as { value: string } | undefined;
+    const isSandboxEnabled = sandboxRow ? sandboxRow.value !== 'false' : true;
+
+    if (!isStaff && (!isSandboxEnabled || order.payment_method !== gateway || Boolean(order.transaction_id))) {
+      return res.status(403).json({ error: 'Test confirmation is disabled for manual or live gateway orders.' });
+    }
 
     if (status === 'success') {
       const txnRef = `${gateway.toUpperCase()}_TEST_${Date.now()}`;
@@ -1085,8 +1207,8 @@ router.post('/payments/test-confirm', (req, res) => {
 
       db.prepare(`
         INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, details)
-        VALUES (?, 'system', 'TEST_PAYMENT_SUCCESS', 'ORDER', ?, ?)
-      `).run(`aud_${Date.now()}`, order_id, JSON.stringify({ gateway, txnRef, note: 'Approved in verified test mode' }));
+        VALUES (?, ?, 'TEST_PAYMENT_SUCCESS', 'ORDER', ?, ?)
+      `).run(`aud_${Date.now()}`, authUser?.id || 'system', order_id, JSON.stringify({ gateway, txnRef, note: 'Approved in verified test mode' }));
 
       return res.json({ success: true, message: `${gateway} payment verified and approved!`, transaction_ref: txnRef });
     } else {
@@ -1102,40 +1224,60 @@ router.post('/payments/test-confirm', (req, res) => {
 // 6. CUSTOMER AUTHENTICATION & PROFILE
 // -------------------------------------------------------------
 
-router.post('/auth/register', (req, res) => {
+router.post('/auth/register', async (req, res) => {
   try {
     const { email, password, confirm_password, full_name, phone } = req.body;
     if (!email || !password || !full_name || !phone) {
       return res.status(400).json({ error: 'Full name, email, WhatsApp number, password, and confirmation are required' });
     }
 
+    if (String(password).trim().length < 4) {
+      return res.status(400).json({ error: 'Password must be at least 4 characters long' });
+    }
+
     if (password !== confirm_password) {
       return res.status(400).json({ error: 'Password and Confirm Password do not match' });
     }
 
-    const cleanPhone = phone.replace(/[\s-]/g, '');
+    const cleanPhone = String(phone).replace(/[\s-]/g, '');
     const pkPhoneRegex = /^(\+92|0092|92|0)?3[0-9]{9}$/;
     if (!pkPhoneRegex.test(cleanPhone)) {
       return res.status(400).json({ error: 'Please enter a valid Pakistani WhatsApp mobile number (e.g. 03001234567)' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
     const existing = db.prepare('SELECT id FROM customers WHERE email = ?').get(cleanEmail);
     if (existing) {
       return res.status(400).json({ error: 'An account with this email address already exists' });
     }
 
     const id = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-    const passHash = hashPassword(password);
+    const passHash = hashPassword(String(password).trim());
 
     db.prepare(`
       INSERT INTO customers (id, email, password_hash, full_name, phone, role)
       VALUES (?, ?, ?, ?, ?, 'customer')
-    `).run(id, cleanEmail, passHash, full_name.trim(), cleanPhone);
+    `).run(id, cleanEmail, passHash, String(full_name).trim(), cleanPhone);
 
-    const token = Buffer.from(`${id}:customer:${Date.now()}`).toString('base64');
+    if (isSupabaseConfigured()) {
+      const sbClient = getSupabaseClient();
+      if (sbClient) {
+        try {
+          await sbClient.from('customers').upsert({
+            id,
+            email: cleanEmail,
+            password_hash: passHash,
+            full_name: String(full_name).trim(),
+            phone: cleanPhone,
+            role: 'customer',
+          }, { onConflict: 'email' });
+        } catch {}
+      }
+    }
+
+    const token = signAuthTokenSync(id, 'customer');
     res.json({
-      user: { id, email: cleanEmail, full_name, phone: cleanPhone, role: 'customer' },
+      user: { id, email: cleanEmail, full_name: String(full_name).trim(), phone: cleanPhone, role: 'customer' },
       token
     });
   } catch (err: any) {
@@ -1150,67 +1292,40 @@ router.post('/auth/login', (req, res) => {
       return res.status(400).json({ error: 'Email and password required' });
     }
 
-    const cleanEmail = email.trim().toLowerCase();
+    const cleanEmail = String(email).trim().toLowerCase();
     const rawPass = String(password).trim();
     const passHash = hashPassword(rawPass);
 
-    // 1. Staff / Administrator credentials check
-    if (cleanEmail === 'uatal.pk@gmail.com' && (rawPass === 'Umer@9157' || rawPass === 'admin')) {
-      let adminUser = db.prepare('SELECT * FROM customers WHERE email = ?').get(cleanEmail) as any;
-      if (!adminUser) {
+    let user = db.prepare('SELECT * FROM customers WHERE email = ?').get(cleanEmail) as any;
+
+    if (user) {
+      const storedBuf = Buffer.from(String(user.password_hash || ''), 'utf8');
+      const givenBuf = Buffer.from(passHash, 'utf8');
+      if (storedBuf.length !== givenBuf.length || !crypto.timingSafeEqual(storedBuf, givenBuf)) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+    } else {
+      // Bootstrap initial staff row ONLY if it does not yet exist in customers table
+      if (cleanEmail === 'uatal.pk@gmail.com' && rawPass === 'Umer@9157') {
         const id = 'usr_admin_uatal';
         db.prepare(`
-          INSERT OR REPLACE INTO customers (id, email, password_hash, full_name, phone, role)
+          INSERT INTO customers (id, email, password_hash, full_name, phone, role)
           VALUES (?, ?, ?, 'Umer (Administrator)', '03719150297', 'admin')
         `).run(id, cleanEmail, passHash);
-        adminUser = { id, email: cleanEmail, full_name: 'Umer (Administrator)', phone: '03719150297', role: 'admin' };
-      }
-      const token = Buffer.from(`${adminUser.id}:${adminUser.role}:${Date.now()}`).toString('base64');
-      return res.json({
-        user: {
-          id: adminUser.id,
-          email: adminUser.email,
-          full_name: adminUser.full_name,
-          phone: adminUser.phone,
-          role: 'admin'
-        },
-        token
-      });
-    }
-
-    if (cleanEmail === 'ali@atal.com' && (rawPass === 'Ali@297' || rawPass === 'employee')) {
-      let empUser = db.prepare('SELECT * FROM customers WHERE email = ?').get(cleanEmail) as any;
-      if (!empUser) {
+        user = { id, email: cleanEmail, full_name: 'Umer (Administrator)', phone: '03719150297', role: 'admin' };
+      } else if (cleanEmail === 'ali@atal.com' && rawPass === 'Ali@297') {
         const id = 'usr_emp_ali';
         db.prepare(`
-          INSERT OR REPLACE INTO customers (id, email, password_hash, full_name, phone, role)
+          INSERT INTO customers (id, email, password_hash, full_name, phone, role)
           VALUES (?, ?, ?, 'Ali (Store Manager)', '03719150297', 'employee')
         `).run(id, cleanEmail, passHash);
-        empUser = { id, email: cleanEmail, full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' };
+        user = { id, email: cleanEmail, full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' };
+      } else {
+        return res.status(401).json({ error: 'Invalid email or password' });
       }
-      const token = Buffer.from(`${empUser.id}:${empUser.role}:${Date.now()}`).toString('base64');
-      return res.json({
-        user: {
-          id: empUser.id,
-          email: empUser.email,
-          full_name: empUser.full_name,
-          phone: empUser.phone,
-          role: 'employee'
-        },
-        token
-      });
     }
 
-    const user = db.prepare('SELECT * FROM customers WHERE email = ?').get(cleanEmail) as any;
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
-
-    if (user.password_hash !== passHash) {
-      return res.status(401).json({ error: 'Invalid email or password' });
-    }
-
-    const token = Buffer.from(`${user.id}:${user.role}:${Date.now()}`).toString('base64');
+    const token = signAuthTokenSync(user.id, user.role);
     res.json({
       user: {
         id: user.id,
@@ -1232,28 +1347,6 @@ router.get('/auth/me', (req, res) => {
   res.json({ user });
 });
 
-router.get('/orders/my', (req, res) => {
-  const user = getAuthenticatedUser(req);
-  if (!user) return res.status(401).json({ error: 'Please log in to view your orders' });
-
-  const cleanPhone = user.phone ? user.phone.replace(/\D/g, '').slice(-10) : '';
-
-  const rawOrders = db.prepare(`
-    SELECT * FROM orders 
-    WHERE customer_id = ? 
-       OR (customer_email IS NOT NULL AND LOWER(customer_email) = LOWER(?))
-       OR (phone IS NOT NULL AND LENGTH(?) > 5 AND REPLACE(REPLACE(phone, ' ', ''), '-', '') LIKE ?)
-    ORDER BY created_at DESC
-  `).all(
-    user.id,
-    user.email,
-    cleanPhone,
-    `%${cleanPhone}%`
-  ) as any[];
-
-  const orders = rawOrders.map(o => normalizeOrder(o));
-  res.json(orders);
-});
 
 // Wishlist
 router.get('/wishlist', (req, res) => {
@@ -2219,16 +2312,43 @@ router.get('/admin/coupons', requireAdmin, (req, res) => {
 
 router.post('/admin/coupons', requireAdmin, async (req, res) => {
   try {
-    const { code, discount_type, discount_value, min_order_amount, max_discount, usage_limit } = req.body;
+    const { code, discount_type, discount_value, min_order_amount, max_discount, usage_limit, is_active, expires_at } = req.body;
+    const cleanCode = String(code || '').trim().toUpperCase();
+    const numericVal = Number(discount_value);
+    if (!cleanCode || !['percentage', 'fixed'].includes(String(discount_type)) || isNaN(numericVal) || numericVal <= 0) {
+      return res.status(400).json({ error: 'Valid coupon code, discount_type (percentage or fixed), and positive discount_value are required.' });
+    }
+    const activeInt = is_active === false || is_active === 0 ? 0 : 1;
+    const cleanExpiresAt = expires_at ? String(expires_at).trim() : null;
     const id = `cp_${Date.now()}`;
     db.prepare(`
-      INSERT INTO coupons (id, code, discount_type, discount_value, min_order_amount, max_discount, usage_limit)
-      VALUES (?, UPPER(?), ?, ?, ?, ?, ?)
-    `).run(id, code, discount_type, Number(discount_value), Number(min_order_amount || 0), max_discount ? Number(max_discount) : null, usage_limit ? Number(usage_limit) : null);
+      INSERT INTO coupons (id, code, discount_type, discount_value, min_order_amount, max_discount, usage_limit, is_active, expires_at)
+      VALUES (?, UPPER(?), ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      cleanCode,
+      discount_type,
+      numericVal,
+      Number(min_order_amount || 0),
+      max_discount ? Number(max_discount) : null,
+      usage_limit ? Number(usage_limit) : null,
+      activeInt,
+      cleanExpiresAt
+    );
 
     if (isSupabaseConfigured()) {
       try {
-        await saveCouponInSupabase({ id, code, discount_type, discount_value, min_order_amount, max_discount, usage_limit });
+        await saveCouponInSupabase({
+          id,
+          code: cleanCode,
+          discount_type,
+          discount_value: numericVal,
+          min_order_amount,
+          max_discount,
+          usage_limit,
+          is_active: activeInt,
+          expires_at: cleanExpiresAt,
+        });
       } catch (sbErr) {
         console.warn('Supabase coupon sync warning:', sbErr);
       }
@@ -2262,8 +2382,18 @@ router.delete('/admin/coupons/:id', requireAdmin, async (req, res) => {
 router.post('/admin/upload', requireAdmin, async (req, res) => {
   try {
     const { filename, base64Data } = req.body;
-    if (!filename || !base64Data) {
+    if (!filename || !base64Data || typeof filename !== 'string' || typeof base64Data !== 'string') {
       return res.status(400).json({ error: 'Filename and base64Data required' });
+    }
+
+    const matches = base64Data.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,(.+)$/i);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: 'Only JPEG, PNG, WebP, or GIF image uploads are allowed.' });
+    }
+
+    const buffer = Buffer.from(matches[2], 'base64');
+    if (buffer.length > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Uploaded image exceeds the 5MB limit.' });
     }
 
     if (isSupabaseConfigured()) {
@@ -2277,16 +2407,19 @@ router.post('/admin/upload', requireAdmin, async (req, res) => {
       }
     }
 
-    const matches = base64Data.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
-    if (!matches || matches.length !== 3) {
-      return res.status(400).json({ error: 'Invalid base64 payload' });
+    const rawExt = path.extname(path.basename(filename)).toLowerCase();
+    const safeExt = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(rawExt) ? rawExt : '.jpg';
+    const safeName = `upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}${safeExt}`;
+    const uploadsDir = path.resolve(process.cwd(), 'public', 'uploads');
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+    const uploadPath = path.resolve(uploadsDir, safeName);
+    if (!uploadPath.startsWith(uploadsDir + path.sep)) {
+      return res.status(400).json({ error: 'Invalid upload destination path' });
     }
 
-    const ext = path.extname(filename) || '.jpg';
-    const safeName = `upload_${Date.now()}_${Math.random().toString(36).slice(2, 6)}${ext}`;
-    const uploadPath = path.join(process.cwd(), 'public', 'uploads', safeName);
-
-    fs.writeFileSync(uploadPath, Buffer.from(matches[2], 'base64'));
+    fs.writeFileSync(uploadPath, buffer);
     const url = `/uploads/${safeName}`;
 
     res.json({ success: true, url });
@@ -2347,7 +2480,7 @@ router.post('/admin/staff/update-password', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/admin/staff/reset-defaults', requireAdmin, (req, res) => {
+router.post('/admin/staff/reset-defaults', requireAdmin, async (req, res) => {
   try {
     const adminEmail = 'uatal.pk@gmail.com';
     const adminDefaultPass = 'Umer@9157';
@@ -2357,26 +2490,37 @@ router.post('/admin/staff/reset-defaults', requireAdmin, (req, res) => {
     const empDefaultPass = 'Ali@297';
     const empHash = hashPassword(empDefaultPass);
 
-    // Ensure Admin
+    let adminId = 'usr_admin_uatal';
     const existingAdmin = db.prepare('SELECT id FROM customers WHERE email = ?').get(adminEmail) as any;
     if (existingAdmin) {
+      adminId = existingAdmin.id;
       db.prepare("UPDATE customers SET password_hash = ?, role = 'admin', updated_at = datetime('now') WHERE id = ?").run(adminHash, existingAdmin.id);
     } else {
       db.prepare(`
         INSERT INTO customers (id, email, password_hash, full_name, phone, role)
         VALUES (?, ?, ?, 'Umer (Administrator)', '03719150297', 'admin')
-      `).run(`usr_admin_${Date.now()}`, adminEmail, adminHash);
+      `).run(adminId, adminEmail, adminHash);
     }
 
-    // Ensure Employee
+    let empId = 'usr_emp_ali';
     const existingEmp = db.prepare('SELECT id FROM customers WHERE email = ?').get(empEmail) as any;
     if (existingEmp) {
+      empId = existingEmp.id;
       db.prepare("UPDATE customers SET password_hash = ?, role = 'employee', updated_at = datetime('now') WHERE id = ?").run(empHash, existingEmp.id);
     } else {
       db.prepare(`
         INSERT INTO customers (id, email, password_hash, full_name, phone, role)
         VALUES (?, ?, ?, 'Ali (Store Manager)', '03719150297', 'employee')
-      `).run(`usr_emp_${Date.now()}`, empEmail, empHash);
+      `).run(empId, empEmail, empHash);
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        await updateStaffPasswordInSupabase(adminId, adminHash);
+        await updateStaffPasswordInSupabase(empId, empHash);
+      } catch (sbErr) {
+        console.warn('Supabase staff reset sync warning:', sbErr);
+      }
     }
 
     db.prepare(`

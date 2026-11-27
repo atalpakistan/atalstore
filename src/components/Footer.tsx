@@ -10,12 +10,14 @@ interface FooterProps {
   settings?: StoreSettings | null;
   onNavigateCategory: (slug: string) => void;
   onOpenTracking: () => void;
+  onNavigateAdmin?: () => void;
 }
 
 export const Footer: React.FC<FooterProps> = ({
   settings,
   onNavigateCategory,
   onOpenTracking,
+  onNavigateAdmin,
 }) => {
   const { login } = useAuth();
   const [activePolicyModal, setActivePolicyModal] = useState<{ title: string; content: string } | null>(null);
@@ -43,6 +45,9 @@ export const Footer: React.FC<FooterProps> = ({
     } else {
       setShowAdminLoginModal(false);
       setAdminPassword('');
+      if (res.user?.role === 'admin' || res.user?.role === 'employee') {
+        onNavigateAdmin?.();
+      }
     }
     setAdminLoggingIn(false);
   };

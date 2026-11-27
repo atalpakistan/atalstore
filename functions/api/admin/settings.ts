@@ -1,12 +1,23 @@
 // Cloudflare Pages Function for /api/admin/settings
 import type { StoreSettings } from '../../../src/types';
 import { isSupabaseConfigured, fetchSettingsFromSupabase, updateSettingsInSupabase } from '../../../src/server/supabaseStore.js';
+import { verifyAdminRequestAsync } from '../../../src/server/authToken.js';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-};
+function getCorsHeaders(request?: Request): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  };
+  if (request) {
+    const origin = request.headers.get('Origin');
+    const urlOrigin = new URL(request.url).origin;
+    if (origin && origin === urlOrigin) {
+      headers['Access-Control-Allow-Origin'] = origin;
+      headers['Vary'] = 'Origin';
+    }
+  }
+  return headers;
+}
 
 const DEFAULT_SETTINGS: Record<string, any> = {
   store_name: 'ATAL STORE',
@@ -64,31 +75,14 @@ function syncGlobalDataSettings(updatedSettings: Record<string, any>) {
   }
 }
 
-function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}) {
+function jsonResponse(data: any, status = 200, request?: Request) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      ...CORS_HEADERS,
-      ...headers,
+      ...getCorsHeaders(request),
     },
   });
-}
-
-function verifyAdmin(request: Request): boolean {
-  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
-  if (!authHeader) return false;
-
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return false;
-
-  try {
-    const decoded = atob(token);
-    const [userId, role] = decoded.split(':');
-    return (role === 'admin' || role === 'employee') && Boolean(userId);
-  } catch {
-    return false;
-  }
 }
 
 const NUMERIC_KEYS = new Set([
@@ -135,45 +129,47 @@ function sanitizeAndValidateSettings(input: Record<string, any>): Partial<StoreS
   return sanitized;
 }
 
-export const onRequestOptions = async () => {
-  return new Response(null, { status: 204, headers: CORS_HEADERS });
+export const onRequestOptions = async ({ request }: { request: Request }) => {
+  return new Response(null, { status: 204, headers: getCorsHeaders(request) });
 };
 
 export const onRequestGet = async (context: { request: Request; env?: any }) => {
   const { request, env } = context;
-  if (!verifyAdmin(request)) {
-    return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403);
+  const staffUser = await verifyAdminRequestAsync(request, env);
+  if (!staffUser) {
+    return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403, request);
   }
   if (isSupabaseConfigured(env)) {
     const sbSettings = await fetchSettingsFromSupabase(env);
-    if (sbSettings) return jsonResponse(sbSettings);
+    if (sbSettings) return jsonResponse(sbSettings, 200, request);
   }
   const settings = getStoredSettings();
-  return jsonResponse(settings);
+  return jsonResponse(settings, 200, request);
 };
 
 export const onRequestPut = async (context: { request: Request; env?: any }) => {
   const { request, env } = context;
-  if (!verifyAdmin(request)) {
-    return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403);
+  const staffUser = await verifyAdminRequestAsync(request, env);
+  if (!staffUser) {
+    return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403, request);
   }
 
   try {
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
-      return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400);
+      return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400, request);
     }
 
     const sanitizedUpdates = sanitizeAndValidateSettings(body);
     if (!isSupabaseConfigured(env)) {
       return jsonResponse({
         error: 'Persistent database is not connected. In your Cloudflare Pages Dashboard, go to Settings -> Environment Variables, and add SUPABASE_URL and SUPABASE_ANON_KEY (or SUPABASE_SERVICE_ROLE_KEY).'
-      }, 503);
+      }, 503, request);
     }
 
     const sbRes = await updateSettingsInSupabase(sanitizedUpdates, env);
     if (!sbRes.success) {
-      return jsonResponse({ error: sbRes.error || 'Failed to update settings in database' }, 500);
+      return jsonResponse({ error: sbRes.error || 'Failed to update settings in database' }, 500, request);
     }
 
     const current = getStoredSettings();
@@ -186,17 +182,24 @@ export const onRequestPut = async (context: { request: Request; env?: any }) => 
       success: true,
       message: 'Settings saved permanently in Supabase database.',
       settings: current
-    });
+    }, 200, request);
   } catch (err: any) {
-    return jsonResponse({ error: err?.message || 'Failed to update settings' }, 500);
+    return jsonResponse({ error: err?.message || 'Failed to update settings' }, 500, request);
   }
 };
 
 export const onRequest = async (context: { request: Request; env?: any }) => {
   const { request } = context;
-  if (request.method === 'OPTIONS') return onRequestOptions();
+  if (request.method === 'OPTIONS') return onRequestOptions({ request });
   if (request.method === 'GET') return onRequestGet(context);
   if (request.method === 'PUT') return onRequestPut(context);
 
-  return jsonResponse({ error: 'Method Not Allowed' }, 405, { Allow: 'GET, PUT, OPTIONS' });
+  return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+    status: 405,
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      Allow: 'GET, PUT, OPTIONS',
+      ...getCorsHeaders(request),
+    },
+  });
 };

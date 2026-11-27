@@ -9,8 +9,8 @@ interface AuthContextType {
   isSuperAdmin: boolean;
   isEmployee: boolean;
   isLoading: boolean;
-  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
-  register: (name: string, email: string, pass: string, confirm_pass: string, phone: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; user?: User; error?: string }>;
+  register: (name: string, email: string, pass: string, confirm_pass: string, phone: string) => Promise<{ success: boolean; user?: User; error?: string }>;
   logout: () => void;
   openAuthModal: (mode?: 'login' | 'register') => void;
   closeAuthModal: () => void;
@@ -67,7 +67,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(data.token);
       setUser(data.user);
       setIsAuthModalOpen(false);
-      return { success: true };
+      return { success: true, user: data.user as User };
     } catch (err: any) {
       return { success: false, error: err.message || 'Network error' };
     }
@@ -87,7 +87,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setToken(data.token);
       setUser(data.user);
       setIsAuthModalOpen(false);
-      return { success: true };
+      return { success: true, user: data.user as User };
     } catch (err: any) {
       return { success: false, error: err.message || 'Network error' };
     }

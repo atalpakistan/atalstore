@@ -3689,7 +3689,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <label className="block font-semibold text-slate-700 mb-1">Free Shipping Threshold (PKR)</label>
                       <input
                         type="number"
-                        value={settings['free_shipping_threshold'] || '3000'}
+                        value={settings['free_shipping_threshold'] ?? '9999'}
                         onChange={(e) => setSettings({ ...settings, free_shipping_threshold: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                       />
@@ -3698,7 +3698,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <label className="block font-semibold text-slate-700 mb-1">Standard Shipping Fee (PKR)</label>
                       <input
                         type="number"
-                        value={settings['default_shipping_fee'] || '200'}
+                        value={settings['default_shipping_fee'] ?? '290'}
                         onChange={(e) => setSettings({ ...settings, default_shipping_fee: e.target.value })}
                         className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl"
                       />

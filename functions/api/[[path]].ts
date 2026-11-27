@@ -1,4 +1,5 @@
 import {
+  getSupabaseClient,
   isSupabaseConfigured,
   getSupabaseDiagnostics,
   fetchSettingsFromSupabase,
@@ -32,24 +33,52 @@ import {
   markNotificationReadInSupabase,
   markAllNotificationsReadInSupabase,
   deleteNotificationInSupabase,
+  fetchCustomerOrdersFromSupabase,
+  fetchWishlistFromSupabase,
+  toggleWishlistInSupabase,
+  fetchProductsByIdsFromSupabase,
+  createReminderInSupabase,
 } from '../../src/server/supabaseStore.js';
+import {
+  extractBearerToken,
+  verifyAuthTokenAsync,
+  verifyAdminRequestAsync,
+} from '../../src/server/authToken.js';
 
 // Cloudflare Pages Wildcard Function for all /api/* routes
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-};
+function getCorsHeaders(request?: Request): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS, PATCH',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
+  };
+  if (request) {
+    const origin = request.headers.get('Origin');
+    const urlOrigin = new URL(request.url).origin;
+    if (origin && origin === urlOrigin) {
+      headers['Access-Control-Allow-Origin'] = origin;
+      headers['Vary'] = 'Origin';
+    }
+  }
+  return headers;
+}
 
-function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}) {
+function jsonResponse(data: any, status = 200, headers: Record<string, string> = {}, request?: Request) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      ...CORS_HEADERS,
+      ...getCorsHeaders(request),
       ...headers,
     },
   });
+}
+
+function stripSensitiveSettings(settings: Record<string, any>) {
+  const clean = { ...settings };
+  delete clean.jazzcash_password;
+  delete clean.jazzcash_integrity_salt;
+  delete clean.easypaisa_hash_key;
+  return clean;
 }
 
 // Initial Default Fallback Data (used when database is initializing or before first sync)
@@ -163,28 +192,41 @@ const DEFAULT_STAFF = [
   { id: 'usr_emp_ali', email: 'ali@atal.com', full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' },
 ];
 
-function verifyAdmin(request: Request): boolean {
-  const authHeader = request.headers.get('Authorization') || request.headers.get('authorization');
-  if (!authHeader) return false;
-  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-  if (!token) return false;
-  try {
-    const decoded = atob(token);
-    const [userId, role] = decoded.split(':');
-    return (role === 'admin' || role === 'employee') && Boolean(userId);
-  } catch {
-    return false;
-  }
-}
-
 const DB_NOT_CONFIGURED_ERROR =
   'Persistent database is not connected. In your Cloudflare Pages Dashboard, go to Settings -> Environment Variables, and add SUPABASE_URL and SUPABASE_ANON_KEY (or SUPABASE_SERVICE_ROLE_KEY). Then execute supabase_schema.sql in your Supabase SQL editor.';
+
+async function getAuthenticatedUserEdge(request: Request, env?: any) {
+  const token = extractBearerToken(request.headers.get('Authorization') || request.headers.get('authorization'));
+  if (!token) return null;
+  const verified = await verifyAuthTokenAsync(token, env);
+  if (!verified) return null;
+
+  if (isSupabaseConfigured(env)) {
+    const client = getSupabaseClient(env);
+    if (client) {
+      const { data: dbUser } = await client
+        .from('customers')
+        .select('id, email, full_name, phone, role')
+        .eq('id', verified.userId)
+        .maybeSingle();
+      if (dbUser) return dbUser;
+    }
+  }
+
+  if (verified.userId === 'usr_admin_uatal') {
+    return { id: 'usr_admin_uatal', email: 'uatal.pk@gmail.com', full_name: 'Umer (Administrator)', phone: '03719150297', role: 'admin' };
+  }
+  if (verified.userId === 'usr_emp_ali') {
+    return { id: 'usr_emp_ali', email: 'ali@atal.com', full_name: 'Ali (Store Manager)', phone: '03719150297', role: 'employee' };
+  }
+  return { id: verified.userId, email: '', full_name: 'Customer', phone: '', role: verified.role };
+}
 
 export const onRequest = async (context: { request: Request; params: { path?: string[] }; env?: any }) => {
   const { request, params, env } = context;
 
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: 204, headers: CORS_HEADERS });
+    return new Response(null, { status: 204, headers: getCorsHeaders(request) });
   }
 
   const url = new URL(request.url);
@@ -204,9 +246,9 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   if ((endpoint === 'config' || endpoint === 'settings') && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
       const sbSettings = await fetchSettingsFromSupabase(env);
-      if (sbSettings) return jsonResponse(sbSettings, 200, publicCacheHeaders);
+      if (sbSettings) return jsonResponse(stripSensitiveSettings(sbSettings), 200, publicCacheHeaders, request);
     }
-    return jsonResponse(DEFAULT_SETTINGS, 200, publicCacheHeaders);
+    return jsonResponse(stripSensitiveSettings(DEFAULT_SETTINGS), 200, publicCacheHeaders, request);
   }
 
   // 2. /api/homepage
@@ -221,7 +263,7 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         fetchLaunchSoonFromSupabase(env),
       ]);
 
-      const resolvedSettings = settings || DEFAULT_SETTINGS;
+      const resolvedSettings = stripSensitiveSettings(settings || DEFAULT_SETTINGS);
       const resolvedSections = sections && sections.length > 0 ? sections : DEFAULT_HOMEPAGE_SECTIONS;
       const resolvedBanners = banners && banners.length > 0 ? banners : DEFAULT_BANNERS;
       const resolvedCategories = categories && categories.length > 0 ? categories : DEFAULT_CATEGORIES;
@@ -238,7 +280,7 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         new_launches: resolvedProducts.filter((p: any) => p.new_launch === 1),
         launch_soon: resolvedLaunchSoon,
         catalog_sample: resolvedProducts.slice(0, 12),
-      }, 200, publicCacheHeaders);
+      }, 200, publicCacheHeaders, request);
     }
 
     return jsonResponse({
@@ -265,39 +307,69 @@ export const onRequest = async (context: { request: Request; params: { path?: st
 
   // 4. /api/products
   if (endpoint === 'products' && request.method === 'GET') {
+    const catQuery = url.searchParams.get('category');
+    const subQuery = url.searchParams.get('subcategory');
+    const searchQuery = url.searchParams.get('search');
+    const brandQuery = url.searchParams.get('brand');
+    const minPriceQuery = url.searchParams.get('min_price');
+    const maxPriceQuery = url.searchParams.get('max_price');
+    const sortQuery = url.searchParams.get('sort') || 'newest';
+    const pageNum = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+    const limitNum = Math.max(1, Math.min(50, parseInt(url.searchParams.get('limit') || '12', 10) || 12));
+
+    let sourceProducts: any[] = DEFAULT_PRODUCTS;
     if (isSupabaseConfigured(env)) {
-      let prods = await fetchProductsFromSupabase(env);
-      if (prods) {
-        const catQuery = url.searchParams.get('category');
-        const subQuery = url.searchParams.get('subcategory');
-        const searchQuery = url.searchParams.get('search');
-
-        if (catQuery) {
-          prods = prods.filter((p: any) => p.category_id === catQuery || p.category_slug === catQuery);
-        }
-        if (subQuery) {
-          prods = prods.filter((p: any) => p.subcategory_id === subQuery || p.subcategory_slug === subQuery);
-        }
-        if (searchQuery) {
-          const q = searchQuery.toLowerCase();
-          prods = prods.filter((p: any) =>
-            p.name?.toLowerCase().includes(q) ||
-            p.brand?.toLowerCase().includes(q) ||
-            p.description?.toLowerCase().includes(q) ||
-            p.sku?.toLowerCase().includes(q)
-          );
-        }
-
-        return jsonResponse({
-          products: prods,
-          pagination: { page: 1, limit: 50, total: prods.length, totalPages: 1 },
-        }, 200, publicCacheHeaders);
-      }
+      const sbProds = await fetchProductsFromSupabase(env);
+      if (sbProds) sourceProducts = sbProds;
     }
+
+    let prods = [...sourceProducts];
+    if (catQuery) {
+      prods = prods.filter((p: any) => p.category_id === catQuery || p.category_slug === catQuery);
+    }
+    if (subQuery) {
+      prods = prods.filter((p: any) => p.subcategory_id === subQuery || p.subcategory_slug === subQuery);
+    }
+    if (brandQuery) {
+      prods = prods.filter((p: any) => String(p.brand || '').toLowerCase() === brandQuery.toLowerCase());
+    }
+    if (minPriceQuery !== null && minPriceQuery !== '') {
+      const minP = Number(minPriceQuery);
+      if (!isNaN(minP)) prods = prods.filter((p: any) => Number(p.sale_price || 0) >= minP);
+    }
+    if (maxPriceQuery !== null && maxPriceQuery !== '') {
+      const maxP = Number(maxPriceQuery);
+      if (!isNaN(maxP)) prods = prods.filter((p: any) => Number(p.sale_price || 0) <= maxP);
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      prods = prods.filter((p: any) =>
+        p.name?.toLowerCase().includes(q) ||
+        p.brand?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.sku?.toLowerCase().includes(q)
+      );
+    }
+
+    if (sortQuery === 'price_asc') {
+      prods.sort((a: any, b: any) => Number(a.sale_price || 0) - Number(b.sale_price || 0));
+    } else if (sortQuery === 'price_desc') {
+      prods.sort((a: any, b: any) => Number(b.sale_price || 0) - Number(a.sale_price || 0));
+    } else if (sortQuery === 'popular') {
+      prods.sort((a: any, b: any) => (Number(b.reviews_count || 0) - Number(a.reviews_count || 0)) || (Number(b.rating || 0) - Number(a.rating || 0)));
+    } else {
+      prods.sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    }
+
+    const total = prods.length;
+    const totalPages = Math.max(1, Math.ceil(total / limitNum));
+    const offset = (pageNum - 1) * limitNum;
+    const paged = prods.slice(offset, offset + limitNum);
+
     return jsonResponse({
-      products: DEFAULT_PRODUCTS,
-      pagination: { page: 1, limit: 50, total: DEFAULT_PRODUCTS.length, totalPages: 1 },
-    }, 200, publicCacheHeaders);
+      products: paged,
+      pagination: { page: pageNum, limit: limitNum, total, totalPages },
+    }, 200, publicCacheHeaders, request);
   }
 
   // Single Product
@@ -305,14 +377,78 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     const slugOrId = endpoint.replace(/^products\//, '');
     if (isSupabaseConfigured(env)) {
       const res = await fetchProductBySlugOrIdFromSupabase(slugOrId, env);
-      if (res) return jsonResponse(res, 200, publicCacheHeaders);
+      if (res) return jsonResponse(res, 200, publicCacheHeaders, request);
     }
     const rawProduct = DEFAULT_PRODUCTS.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
     if (!rawProduct) {
-      return jsonResponse({ error: 'Product not found' }, 404);
+      return jsonResponse({ error: 'Product not found' }, 404, {}, request);
     }
     const related = DEFAULT_PRODUCTS.filter((p: any) => p.id !== rawProduct.id).slice(0, 4);
-    return jsonResponse({ product: rawProduct, related }, 200, publicCacheHeaders);
+    return jsonResponse({ product: rawProduct, related }, 200, publicCacheHeaders, request);
+  }
+
+  // Launch Soon Reminder Signup
+  if (endpoint === 'reminders' && request.method === 'POST') {
+    try {
+      const { launch_soon_id, email, phone } = await request.json().catch(() => ({}));
+      if (!launch_soon_id || (!email && !phone)) {
+        return jsonResponse({ error: 'Launch Soon ID and either email or phone is required' }, 400, {}, request);
+      }
+      if (isSupabaseConfigured(env)) {
+        const remRes = await createReminderInSupabase(launch_soon_id, email || null, phone || null, env);
+        if (!remRes.success) return jsonResponse({ error: remRes.error || 'Failed to save reminder' }, 500, {}, request);
+      }
+      return jsonResponse({ success: true, message: 'You have been added to the VIP priority launch notification list!' }, 200, {}, request);
+    } catch (err: any) {
+      return jsonResponse({ error: err?.message || 'Failed to save reminder' }, 500, {}, request);
+    }
+  }
+
+  // Authenticated Customer Orders
+  if (endpoint === 'orders/my' && request.method === 'GET') {
+    const user = await getAuthenticatedUserEdge(request, env);
+    if (!user) return jsonResponse({ error: 'Please log in to view your orders' }, 401, {}, request);
+    if (isSupabaseConfigured(env)) {
+      const myOrders = await fetchCustomerOrdersFromSupabase(user, env);
+      return jsonResponse(myOrders || [], 200, {}, request);
+    }
+    return jsonResponse([], 200, {}, request);
+  }
+
+  // Wishlist Endpoints
+  if (endpoint === 'wishlist' && request.method === 'GET') {
+    const user = await getAuthenticatedUserEdge(request, env);
+    if (!user) return jsonResponse({ product_ids: [] }, 200, {}, request);
+    if (isSupabaseConfigured(env)) {
+      const product_ids = (await fetchWishlistFromSupabase(user.id, env)) || [];
+      return jsonResponse({ product_ids }, 200, {}, request);
+    }
+    return jsonResponse({ product_ids: [] }, 200, {}, request);
+  }
+
+  if (endpoint === 'wishlist/toggle' && request.method === 'POST') {
+    const user = await getAuthenticatedUserEdge(request, env);
+    if (!user) return jsonResponse({ error: 'Please sign in to save your wishlist permanently.' }, 401, {}, request);
+    const { product_id } = await request.json().catch(() => ({}));
+    if (!product_id) return jsonResponse({ error: 'Product ID required' }, 400, {}, request);
+    if (isSupabaseConfigured(env)) {
+      const toggleRes = await toggleWishlistInSupabase(user.id, product_id, env);
+      if (toggleRes) return jsonResponse(toggleRes, 200, {}, request);
+    }
+    return jsonResponse({ inWishlist: true }, 200, {}, request);
+  }
+
+  if (endpoint === 'wishlist/products' && request.method === 'POST') {
+    const { product_ids } = await request.json().catch(() => ({}));
+    if (!Array.isArray(product_ids) || product_ids.length === 0) {
+      return jsonResponse({ products: [] }, 200, {}, request);
+    }
+    if (isSupabaseConfigured(env)) {
+      const products = (await fetchProductsByIdsFromSupabase(product_ids, env)) || [];
+      return jsonResponse({ products }, 200, {}, request);
+    }
+    const fallbackProducts = DEFAULT_PRODUCTS.filter((p) => product_ids.includes(p.id));
+    return jsonResponse({ products: fallbackProducts }, 200, {}, request);
   }
 
   // Place Order
@@ -320,30 +456,16 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     try {
       const body = await request.json();
       if (!isSupabaseConfigured(env)) {
-        return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
-      }
-
-      const sbSettings = await fetchSettingsFromSupabase(env);
-      if (body.payment_method === 'cod' && sbSettings?.cod_enabled === false) {
-        return jsonResponse({ error: 'Cash on Delivery (COD) is currently disabled by the store administrator.' }, 400);
-      }
-      const isAdvanceMandatory = sbSettings ? sbSettings.delivery_advance_mandatory !== false : true;
-      const requiresTxId = body.payment_method !== 'cod' || isAdvanceMandatory;
-      if (requiresTxId && (!body.transaction_id || !String(body.transaction_id).trim())) {
-        return jsonResponse({
-          error: body.payment_method === 'cod'
-            ? 'Transaction ID / Receipt Number for advance shipping payment is required.'
-            : 'Transaction ID / Receipt Number is mandatory for this payment option.'
-        }, 400);
+        return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503, {}, request);
       }
 
       const sbRes = await createOrderInSupabase(body, env);
       if (sbRes.success) {
-        return jsonResponse({ success: true, orderId: sbRes.order.id, order: sbRes.order });
+        return jsonResponse({ success: true, orderId: sbRes.order.id, order: sbRes.order }, 200, {}, request);
       }
-      return jsonResponse({ error: sbRes.error || 'Failed to place order in database' }, 400);
+      return jsonResponse({ error: sbRes.error || 'Failed to place order in database' }, 400, {}, request);
     } catch (err: any) {
-      return jsonResponse({ error: err?.message || 'Failed to process order' }, 400);
+      return jsonResponse({ error: err?.message || 'Failed to process order' }, 400, {}, request);
     }
   }
 
@@ -353,9 +475,9 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     if (isSupabaseConfigured(env)) {
       const orders = await fetchOrdersFromSupabase(env);
       const match = orders?.find((o: any) => (o.id || '').toUpperCase() === orderId);
-      if (match) return jsonResponse(match);
+      if (match) return jsonResponse(match, 200, {}, request);
     }
-    return jsonResponse({ error: `Order #${orderId} was not found in our database.` }, 404);
+    return jsonResponse({ error: `Order #${orderId} was not found in our database.` }, 404, {}, request);
   }
 
   // Public Order Tracking
@@ -363,7 +485,7 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     try {
       const { order_id, phone } = await request.json();
       if (!order_id || !order_id.toString().trim()) {
-        return jsonResponse({ error: 'Please enter your Order Number or Courier Consignment Number.' }, 400);
+        return jsonResponse({ error: 'Please enter your Order Number or Courier Consignment Number.' }, 400, {}, request);
       }
       const cleanInput = order_id.toString().trim().toUpperCase();
       let ordersList: any[] = [];
@@ -387,7 +509,9 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       if (!match) {
         return jsonResponse(
           { error: `No active order found with identifier "${cleanInput}". Please check your order confirmation.` },
-          404
+          404,
+          {},
+          request
         );
       }
 
@@ -395,13 +519,13 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         const inputDigits = phone.toString().replace(/\D/g, '').slice(-7);
         const orderDigits = (match.phone || '').toString().replace(/\D/g, '').slice(-7);
         if (inputDigits && orderDigits && inputDigits !== orderDigits) {
-          return jsonResponse({ error: 'The phone number provided does not match this order.' }, 403);
+          return jsonResponse({ error: 'The phone number provided does not match this order.' }, 403, {}, request);
         }
       }
 
-      return jsonResponse(match);
+      return jsonResponse(match, 200, {}, request);
     } catch {
-      return jsonResponse({ error: 'Error processing tracking request' }, 500);
+      return jsonResponse({ error: 'Error processing tracking request' }, 500, {}, request);
     }
   }
 
@@ -409,29 +533,50 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   if (endpoint === 'coupons/validate' && request.method === 'POST') {
     try {
       const { code, subtotal = 0 } = await request.json();
-      if (!code) return jsonResponse({ error: 'Coupon code required' }, 400);
+      if (!code) return jsonResponse({ error: 'Coupon code required' }, 400, {}, request);
 
+      const numericSubtotal = Math.max(0, Number(subtotal) || 0);
       let couponsList: any[] = [];
       if (isSupabaseConfigured(env)) {
         couponsList = (await fetchCouponsFromSupabase(env)) || [];
       } else {
-        couponsList = [{ id: 'cp_welcome', code: 'ATAL10', discount_type: 'percentage', discount_value: 10, min_order_amount: 2000, is_active: 1 }];
+        couponsList = [{ id: 'cp_welcome', code: 'ATAL10', discount_type: 'percentage', discount_value: 10, min_order_amount: 2000, max_discount: 1500, is_active: 1 }];
       }
 
-      const cp = couponsList.find((c: any) => c.code.toUpperCase() === String(code).toUpperCase() && c.is_active === 1);
-      if (!cp) return jsonResponse({ error: 'Invalid or expired coupon code' }, 404);
+      const cp = couponsList.find((c: any) => c.code.toUpperCase() === String(code).trim().toUpperCase() && c.is_active === 1);
+      if (!cp) return jsonResponse({ error: 'Invalid or expired coupon code' }, 404, {}, request);
 
-      if (cp.min_order_amount && subtotal < cp.min_order_amount) {
+      if (cp.expires_at) {
+        const expMs = new Date(cp.expires_at).getTime();
+        if (!isNaN(expMs) && expMs <= Date.now()) {
+          return jsonResponse({ error: 'This coupon code has expired.' }, 400, {}, request);
+        }
+      }
+
+      if (cp.usage_limit && Number(cp.usage_count || 0) >= Number(cp.usage_limit)) {
+        return jsonResponse({ error: 'This coupon has reached its maximum usage limit.' }, 400, {}, request);
+      }
+
+      if (cp.min_order_amount && numericSubtotal < cp.min_order_amount) {
         return jsonResponse({
           error: `This coupon requires a minimum order of Rs. ${cp.min_order_amount.toLocaleString('en-PK')}`,
-        }, 400);
+        }, 400, {}, request);
       }
 
-      let discount = cp.discount_type === 'percentage' ? (subtotal * cp.discount_value) / 100 : cp.discount_value;
-      discount = Math.min(discount, subtotal);
-      return jsonResponse({ valid: true, code: cp.code, discount });
+      let discount = cp.discount_type === 'percentage' ? (numericSubtotal * cp.discount_value) / 100 : cp.discount_value;
+      if (cp.discount_type === 'percentage' && cp.max_discount && discount > cp.max_discount) {
+        discount = cp.max_discount;
+      }
+      discount = Math.min(discount, numericSubtotal);
+      return jsonResponse({
+        valid: true,
+        code: cp.code,
+        discount,
+        discount_type: cp.discount_type,
+        discount_value: cp.discount_value,
+      }, 200, {}, request);
     } catch {
-      return jsonResponse({ error: 'Invalid coupon check' }, 400);
+      return jsonResponse({ error: 'Invalid coupon check' }, 400, {}, request);
     }
   }
 
@@ -440,8 +585,9 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   // -------------------------------------------------------------
 
   if (endpoint.startsWith('admin/')) {
-    if (!verifyAdmin(request)) {
-      return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403);
+    const staffUser = await verifyAdminRequestAsync(request, env);
+    if (!staffUser) {
+      return jsonResponse({ error: 'Unauthorized: Staff or Administrator access required' }, 403, {}, request);
     }
 
     // Diagnostic Status Endpoint
@@ -821,23 +967,23 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       if (request.method === 'GET') {
         if (isSupabaseConfigured(env)) {
           const sbSettings = await fetchSettingsFromSupabase(env);
-          if (sbSettings) return jsonResponse(sbSettings);
+          if (sbSettings) return jsonResponse(sbSettings, 200, {}, request);
         }
-        return jsonResponse(DEFAULT_SETTINGS);
+        return jsonResponse(DEFAULT_SETTINGS, 200, {}, request);
       }
       if (request.method === 'PUT') {
         const body = await request.json().catch(() => null);
         if (!body || typeof body !== 'object' || Array.isArray(body)) {
-          return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400);
+          return jsonResponse({ error: 'Invalid JSON payload: Object required' }, 400, {}, request);
         }
         if (!isSupabaseConfigured(env)) {
-          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503, {}, request);
         }
         const sbRes = await updateSettingsInSupabase(body, env);
         if (sbRes.success) {
-          return jsonResponse({ success: true, message: 'Settings saved permanently in Supabase database.' });
+          return jsonResponse({ success: true, message: 'Settings saved permanently in Supabase database.' }, 200, {}, request);
         }
-        return jsonResponse({ error: sbRes.error || 'Failed to save settings to database' }, 500);
+        return jsonResponse({ error: sbRes.error || 'Failed to save settings to database' }, 500, {}, request);
       }
     }
 
@@ -845,22 +991,22 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     if (endpoint === 'admin/staff' && request.method === 'GET') {
       if (isSupabaseConfigured(env)) {
         const staff = await fetchStaffFromSupabase(env);
-        if (staff && staff.length > 0) return jsonResponse(staff);
+        if (staff && staff.length > 0) return jsonResponse(staff, 200, {}, request);
       }
-      return jsonResponse(DEFAULT_STAFF);
+      return jsonResponse(DEFAULT_STAFF, 200, {}, request);
     }
 
     if (endpoint === 'admin/staff/update-password' && request.method === 'POST') {
       try {
         const { user_id, new_password } = await request.json().catch(() => ({}));
         if (!user_id || !new_password || String(new_password).trim().length < 4) {
-          return jsonResponse({ error: 'Valid user ID and new password (min 4 characters) are required.' }, 400);
+          return jsonResponse({ error: 'Valid user ID and new password (min 4 characters) are required.' }, 400, {}, request);
         }
         if (!isSupabaseConfigured(env)) {
-          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503, {}, request);
         }
 
-        // Web Crypto SHA-256 HMAC hash
+        // Web Crypto SHA-256 HMAC password hash
         const encoder = new TextEncoder();
         const keyData = encoder.encode('atal_salt_2026_pk');
         const cryptoKey = await crypto.subtle.importKey(
@@ -875,11 +1021,42 @@ export const onRequest = async (context: { request: Request; params: { path?: st
 
         const sbRes = await updateStaffPasswordInSupabase(user_id, hashHex, env);
         if (sbRes.success) {
-          return jsonResponse({ success: true, message: 'Password successfully updated in Supabase database.' });
+          return jsonResponse({ success: true, message: 'Password successfully updated in Supabase database.' }, 200, {}, request);
         }
-        return jsonResponse({ error: sbRes.error || 'Failed to update staff password' }, 500);
+        return jsonResponse({ error: sbRes.error || 'Failed to update staff password' }, 500, {}, request);
       } catch (err: any) {
-        return jsonResponse({ error: err?.message || 'Password update failed' }, 500);
+        return jsonResponse({ error: err?.message || 'Password update failed' }, 500, {}, request);
+      }
+    }
+
+    if (endpoint === 'admin/staff/reset-defaults' && request.method === 'POST') {
+      try {
+        if (!isSupabaseConfigured(env)) {
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503, {}, request);
+        }
+        const encoder = new TextEncoder();
+        const cryptoKey = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode('atal_salt_2026_pk'),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const hashPw = async (pw: string) => {
+          const sig = await crypto.subtle.sign('HMAC', cryptoKey, encoder.encode(pw));
+          return Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+        };
+        const [adminHash, empHash] = await Promise.all([hashPw('admin123'), hashPw('emp123')]);
+        const [r1, r2] = await Promise.all([
+          updateStaffPasswordInSupabase('usr_admin_uatal', adminHash, env),
+          updateStaffPasswordInSupabase('usr_emp_ali', empHash, env),
+        ]);
+        if (!r1.success || !r2.success) {
+          return jsonResponse({ error: r1.error || r2.error || 'Failed to reset staff passwords' }, 500, {}, request);
+        }
+        return jsonResponse({ success: true, message: 'All admin & employee passwords reset to defaults in Supabase.' }, 200, {}, request);
+      } catch (err: any) {
+        return jsonResponse({ error: err?.message || 'Reset failed' }, 500, {}, request);
       }
     }
 
@@ -923,14 +1100,14 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         homepage_sections: currentSections,
         launch_soon: currentLaunchSoon,
         coupons: currentCoupons,
-      });
+      }, 200, {}, request);
     }
 
     if (endpoint === 'admin/backup/import' && request.method === 'POST') {
       try {
         const { backupData, dryRun = false } = await request.json().catch(() => ({}));
         if (!backupData || typeof backupData !== 'object' || !backupData.version) {
-          return jsonResponse({ error: 'Invalid backup file: Not a valid JSON document' }, 400);
+          return jsonResponse({ error: 'Invalid backup file: Not a valid JSON document' }, 400, {}, request);
         }
         const preview = {
           categories: Array.isArray(backupData.categories) ? backupData.categories.length : 0,
@@ -939,11 +1116,11 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           settings: Array.isArray(backupData.settings) ? backupData.settings.length : 0,
         };
         if (dryRun) {
-          return jsonResponse({ success: true, dryRun: true, preview, message: 'Backup validation passed. Ready to restore.' });
+          return jsonResponse({ success: true, dryRun: true, preview, message: 'Backup validation passed. Ready to restore.' }, 200, {}, request);
         }
 
         if (!isSupabaseConfigured(env)) {
-          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503);
+          return jsonResponse({ error: DB_NOT_CONFIGURED_ERROR }, 503, {}, request);
         }
 
         if (Array.isArray(backupData.categories)) {
@@ -961,9 +1138,9 @@ export const onRequest = async (context: { request: Request; params: { path?: st
           await updateSettingsInSupabase(setObj, env);
         }
 
-        return jsonResponse({ success: true, message: 'Backup imported into Supabase database successfully.', recordsRestored: preview });
+        return jsonResponse({ success: true, message: 'Backup imported into Supabase database successfully.', recordsRestored: preview }, 200, {}, request);
       } catch (err: any) {
-        return jsonResponse({ error: `Import failed: ${err?.message}` }, 400);
+        return jsonResponse({ error: `Import failed: ${err?.message}` }, 400, {}, request);
       }
     }
 
@@ -971,19 +1148,28 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     if (endpoint === 'admin/upload' && request.method === 'POST') {
       try {
         const { filename, base64Data } = await request.json().catch(() => ({}));
-        if (!filename || !base64Data) {
-          return jsonResponse({ error: 'Filename and base64Data required' }, 400);
+        if (!filename || !base64Data || typeof base64Data !== 'string') {
+          return jsonResponse({ error: 'Filename and base64Data required' }, 400, {}, request);
+        }
+        const match = base64Data.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=]+)$/i);
+        if (!match) {
+          return jsonResponse({ error: 'Only JPEG, PNG, WebP, and GIF image uploads are allowed.' }, 400, {}, request);
+        }
+        const approxBytes = Math.floor((match[2].length * 3) / 4);
+        if (approxBytes > 5 * 1024 * 1024) {
+          return jsonResponse({ error: 'Image file size must be 5MB or less.' }, 400, {}, request);
         }
         if (isSupabaseConfigured(env)) {
           const publicUrl = await uploadImageToSupabaseStorage(filename, base64Data, env);
-          return jsonResponse({ success: true, url: publicUrl });
+          return jsonResponse({ success: true, url: publicUrl }, 200, {}, request);
         }
-        return jsonResponse({ success: true, url: base64Data });
+        return jsonResponse({ success: true, url: base64Data }, 200, {}, request);
       } catch (err: any) {
-        return jsonResponse({ error: err?.message || 'Upload failed' }, 500);
+        return jsonResponse({ error: err?.message || 'Upload failed' }, 400, {}, request);
       }
     }
   }
 
-  return jsonResponse({ error: `API route not found: ${request.method} ${endpoint}` }, 404);
+  return jsonResponse({ error: `API route not found: ${request.method} ${endpoint}` }, 404, {}, request);
 };
+

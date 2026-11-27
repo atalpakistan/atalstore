@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Lock, Mail, User as UserIcon, Phone, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,6 +13,13 @@ export const AuthModal: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (isAuthModalOpen) {
+      setMode(authModalMode);
+      setError('');
+    }
+  }, [authModalMode, isAuthModalOpen]);
 
   if (!isAuthModalOpen) return null;
 

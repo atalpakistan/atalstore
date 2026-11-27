@@ -110,13 +110,13 @@ export const OrderTrackingModal: React.FC<OrderTrackingModalProps> = ({ isOpen, 
             <input
               type="text"
               required
-              placeholder="e.g. ATL-582914 or TCS / Trax Consignment #"
+              placeholder="e.g. 901827463 or TCS / Trax Consignment #"
               value={orderId}
               onChange={(e) => setOrderId(e.target.value.toUpperCase())}
               className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm uppercase font-mono font-bold focus:outline-none focus:ring-2 focus:ring-[#093824]"
             />
             <span className="text-[11px] text-slate-400 mt-1 block">
-              Enter your official ATAL Order Number (e.g. ATL-XXXXXX) or your courier tracking number.
+              Enter your 9-digit ATAL Order Number (e.g. 901827463) or your courier tracking number.
             </span>
           </div>
 

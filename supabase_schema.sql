@@ -182,8 +182,11 @@ CREATE TABLE IF NOT EXISTS public.coupons (
   discount_type TEXT NOT NULL,
   discount_value NUMERIC NOT NULL,
   min_order_amount NUMERIC NOT NULL DEFAULT 0,
+  max_discount NUMERIC,
+  usage_limit INTEGER,
   usage_count INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
+  expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -213,6 +216,27 @@ CREATE TABLE IF NOT EXISTS public.slug_redirects (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 16. NOTIFICATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  link TEXT,
+  entity_id TEXT,
+  is_read INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 17. REMINDERS TABLE
+CREATE TABLE IF NOT EXISTS public.reminders (
+  id TEXT PRIMARY KEY,
+  launch_soon_id TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ====================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- Enable public read for catalog & authenticated/anon write via service_role / anon key
@@ -233,6 +257,8 @@ ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wishlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.slug_redirects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
 
 -- Allow public read access to active storefront data
 CREATE POLICY "Public Read Settings" ON public.settings FOR SELECT USING (true);
@@ -265,6 +291,8 @@ CREATE POLICY "Allow All Coupons" ON public.coupons FOR ALL USING (true) WITH CH
 CREATE POLICY "Allow All Wishlist" ON public.wishlist_items FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow All Audit Logs" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow All Slug Redirects" ON public.slug_redirects FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Reminders" ON public.reminders FOR ALL USING (true) WITH CHECK (true);
 
 -- ====================================================================
 -- SEED INITIAL STORE DEFAULT VALUES
@@ -292,16 +320,14 @@ INSERT INTO public.settings (key, value) VALUES
   ('cod_enabled', 'true'),
   ('jazzcash_enabled', 'true'),
   ('jazzcash_account_title', 'Omar Farooq'),
+  ('jazzcash_till_id', ''),
   ('jazzcash_account_number', '03227796097'),
   ('jazzcash_qr_url', '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.26.22_PM_96ced8c4.jpeg'),
   ('easypaisa_enabled', 'true'),
   ('easypaisa_account_title', 'Omar Farooq'),
+  ('easypaisa_till_id', ''),
   ('easypaisa_account_number', '03227796097'),
-  ('easypaisa_qr_url', '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg'),
-  ('hbl_enabled', 'true'),
-  ('hbl_account_title', 'Umer Farooq'),
-  ('hbl_account_number', '50627918149903'),
-  ('hbl_qr_url', '/assets/aistudio/WhatsApp_Image_2026-10-22_at_9.45.39_AM_5e21af89.jpeg')
+  ('easypaisa_qr_url', '/assets/aistudio/WhatsApp_Image_2026-10-20_at_11.24.41_PM_3cd4a1f7.jpeg')
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO public.categories (id, name, slug, icon, image, description, display_order) VALUES

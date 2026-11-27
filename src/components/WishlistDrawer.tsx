@@ -40,9 +40,23 @@ export const WishlistDrawer: React.FC<WishlistDrawerProps> = ({
         if (res.ok) {
           const data = await res.json();
           setProducts(data.products || []);
+          return;
         }
+        throw new Error('Batch endpoint unavailable');
       } catch {
-        // Fallback: search individual products if batch fails
+        const individual = await Promise.all(
+          wishlistIds.map(async (pid) => {
+            try {
+              const r = await fetch(`/api/products/${encodeURIComponent(pid)}`);
+              if (!r.ok) return null;
+              const d = await r.json();
+              return d?.product || null;
+            } catch {
+              return null;
+            }
+          })
+        );
+        setProducts(individual.filter((p): p is Product => Boolean(p && p.id)));
       } finally {
         setLoading(false);
       }

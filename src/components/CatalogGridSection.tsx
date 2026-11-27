@@ -41,10 +41,15 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
   const [page, setPage] = useState(() => savedFilters?.page || 1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(() => initialProducts?.length || 0);
+  const [resetTrigger, setResetTrigger] = useState(0);
   const requestSeqRef = useRef(0);
+  const prevInitialCategoryRef = useRef(initialCategorySlug);
+  const isInitialMountRef = useRef(true);
 
-  // Sync initialCategorySlug when prop changes
+  // Sync initialCategorySlug only when prop actually changes
   useEffect(() => {
+    if (prevInitialCategoryRef.current === initialCategorySlug) return;
+    prevInitialCategoryRef.current = initialCategorySlug;
     if (initialCategorySlug !== undefined) {
       setSelectedCategory(initialCategorySlug || '');
       setSelectedSubcategory('');
@@ -117,8 +122,13 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
   };
 
   useEffect(() => {
+    if (isInitialMountRef.current) {
+      isInitialMountRef.current = false;
+      fetchCatalog(page);
+      return;
+    }
     fetchCatalog(1);
-  }, [selectedCategory, selectedSubcategory, priceSort, maxPriceFilter]);
+  }, [selectedCategory, selectedSubcategory, priceSort, maxPriceFilter, resetTrigger]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -132,6 +142,7 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
     setPriceSort('newest');
     setMaxPriceFilter('');
     setPage(1);
+    setResetTrigger((c) => c + 1);
   };
 
   const hasActiveFilters = Boolean(searchTerm || selectedCategory || selectedSubcategory || maxPriceFilter || priceSort !== 'newest');

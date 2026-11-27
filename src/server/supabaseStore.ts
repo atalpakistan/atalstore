@@ -731,14 +731,17 @@ export async function saveCouponInSupabase(
   if (!client) return { success: false, error: 'Database not configured: Missing SUPABASE_URL / key' };
 
   const id = coupon.id || `cp_${Date.now()}`;
-  const row = {
+  const row: Record<string, any> = {
     id,
     code: String(coupon.code || '').trim().toUpperCase(),
     discount_type: coupon.discount_type || 'percentage',
     discount_value: Number(coupon.discount_value || 0),
     min_order_amount: Number(coupon.min_order_amount || 0),
+    max_discount: coupon.max_discount !== undefined && coupon.max_discount !== null && coupon.max_discount !== '' ? Number(coupon.max_discount) : null,
+    usage_limit: coupon.usage_limit !== undefined && coupon.usage_limit !== null && coupon.usage_limit !== '' ? Number(coupon.usage_limit) : null,
     usage_count: Number(coupon.usage_count || 0),
     is_active: coupon.is_active ?? 1,
+    expires_at: coupon.expires_at || null,
   };
 
   const { error } = await client.from('coupons').upsert(row, { onConflict: 'id' });
@@ -834,29 +837,209 @@ export async function createOrderInSupabase(
   const client = getSupabaseClient(envObj);
   if (!client) return { success: false, error: 'Database not configured: Missing SUPABASE_URL / key' };
 
-  const orderId = body.id || `ATL-${Math.floor(100000 + Math.random() * 900000)}`;
-  const cleanTxId = body.transaction_id || body.transaction_ref || null;
+  const cleanPhone = String(body.phone || '').replace(/[\s-]/g, '');
+  const pkPhoneRegex = /^(\+92|0092|92|0)?3[0-9]{9}$/;
+  if (!cleanPhone || !pkPhoneRegex.test(cleanPhone)) {
+    return { success: false, error: 'Please enter a valid Pakistani mobile number (e.g. 03001234567 or +923001234567)' };
+  }
+
+  if (!body.customer_name || !body.province || !body.city || !body.street_address || !Array.isArray(body.items) || body.items.length === 0) {
+    return { success: false, error: 'Missing required shipping information or empty order items' };
+  }
+
+  const allowedPaymentMethods = new Set(['cod', 'jazzcash', 'easypaisa']);
+  const paymentMethod = String(body.payment_method || 'cod').toLowerCase();
+  if (!allowedPaymentMethods.has(paymentMethod)) {
+    return { success: false, error: 'Unsupported payment method selected.' };
+  }
+
+  const sbSettings = (await fetchSettingsFromSupabase(envObj)) || {};
+  if (paymentMethod === 'cod' && sbSettings.cod_enabled === false) {
+    return { success: false, error: 'Cash on Delivery (COD) is currently disabled by the store administrator.' };
+  }
+  if (paymentMethod === 'jazzcash' && sbSettings.jazzcash_enabled === false) {
+    return { success: false, error: 'JazzCash is currently disabled by the store administrator.' };
+  }
+  if (paymentMethod === 'easypaisa' && sbSettings.easypaisa_enabled === false) {
+    return { success: false, error: 'Easypaisa is currently disabled by the store administrator.' };
+  }
+
+  const isAdvanceMandatory = sbSettings.delivery_advance_mandatory !== false;
+  const requiresTxId = paymentMethod !== 'cod' || isAdvanceMandatory;
+  const cleanTxId = String(body.transaction_id || body.transaction_ref || '').trim();
+  if (requiresTxId && !cleanTxId) {
+    return {
+      success: false,
+      error: paymentMethod === 'cod'
+        ? 'Transaction ID / Receipt Number for advance shipping payment is required.'
+        : 'Transaction ID / Receipt Number is mandatory for this payment option.',
+    };
+  }
+
+  let subtotal = 0;
+  const verifiedItems: Array<{
+    product_id: string;
+    product_name: string;
+    variant_id: string | null;
+    variant_title: string | null;
+    price: number;
+    quantity: number;
+    image_url: string;
+    total: number;
+    product_stock: number;
+    product_sku: string;
+    low_stock_threshold: number;
+    variant_stock: number | null;
+  }> = [];
+
+  for (const rawIt of body.items) {
+    const pid = rawIt.product_id || rawIt.id;
+    const qty = Math.floor(Number(rawIt.quantity));
+    if (!pid || !Number.isFinite(qty) || qty < 1) {
+      return { success: false, error: 'Each cart item must have a valid product and positive quantity.' };
+    }
+
+    const { data: prod, error: prodErr } = await client
+      .from('products')
+      .select('id, name, sku, sale_price, available_stock, low_stock_threshold, images')
+      .or(`id.eq.${pid},slug.eq.${pid}`)
+      .maybeSingle();
+
+    if (prodErr || !prod) {
+      return { success: false, error: `Product "${pid}" was not found or is no longer available.` };
+    }
+
+    let unitPrice = Number(prod.sale_price);
+    let variantTitle: string | null = rawIt.variant_title || rawIt.variant_name || null;
+    let itemImg = '/icon.svg';
+    let parsedImgs: string[] = [];
+    if (Array.isArray(prod.images)) parsedImgs = prod.images;
+    else if (typeof prod.images === 'string') {
+      try {
+        const p = JSON.parse(prod.images);
+        if (Array.isArray(p)) parsedImgs = p;
+      } catch {}
+    }
+    if (parsedImgs.length > 0 && parsedImgs[0]) itemImg = parsedImgs[0];
+
+    let variantStock: number | null = null;
+    const vid = rawIt.variant_id || null;
+    if (vid) {
+      const { data: variant } = await client
+        .from('product_variants')
+        .select('*')
+        .eq('id', vid)
+        .eq('product_id', prod.id)
+        .maybeSingle();
+
+      if (!variant) {
+        return { success: false, error: `Selected variant for "${prod.name}" is no longer available.` };
+      }
+      if (variant.price !== undefined && variant.price !== null && Number(variant.price) > 0) {
+        unitPrice = Number(variant.price);
+      }
+      variantTitle = `${variant.color_name || ''} ${variant.size || ''}`.trim() || variantTitle;
+      if (variant.image_url) itemImg = variant.image_url;
+      variantStock = Number(variant.stock || 0);
+      if (variantStock < qty) {
+        return { success: false, error: `Insufficient stock for ${prod.name} (${variantTitle}). Only ${variantStock} left.` };
+      }
+    }
+
+    if (!Number.isFinite(unitPrice) || unitPrice <= 0) {
+      return { success: false, error: `Product "${prod.name}" has an invalid price.` };
+    }
+
+    const currentStock = Number(prod.available_stock ?? 0);
+    if (currentStock < qty) {
+      return { success: false, error: `Insufficient stock for ${prod.name}. Available: ${currentStock}` };
+    }
+
+    const lineTotal = unitPrice * qty;
+    subtotal += lineTotal;
+
+    verifiedItems.push({
+      product_id: prod.id,
+      product_name: prod.name,
+      variant_id: vid,
+      variant_title: variantTitle,
+      price: unitPrice,
+      quantity: qty,
+      image_url: itemImg,
+      total: lineTotal,
+      product_stock: currentStock,
+      product_sku: prod.sku || prod.id,
+      low_stock_threshold: Number(prod.low_stock_threshold ?? 5),
+      variant_stock: variantStock,
+    });
+  }
+
+  // Validate and compute coupon discount server-side
+  let discount = 0;
+  if (body.coupon_code) {
+    const { data: coupons } = await client
+      .from('coupons')
+      .select('*')
+      .ilike('code', String(body.coupon_code).trim())
+      .eq('is_active', 1)
+      .limit(1);
+
+    const coupon = coupons?.[0];
+    const notExpired = !coupon?.expires_at || new Date(coupon.expires_at).getTime() > Date.now();
+    const withinLimit = !coupon?.usage_limit || Number(coupon.usage_count || 0) < Number(coupon.usage_limit);
+    const meetsMin = !coupon?.min_order_amount || subtotal >= Number(coupon.min_order_amount);
+
+    if (coupon && notExpired && withinLimit && meetsMin) {
+      if (coupon.discount_type === 'percentage') {
+        discount = (subtotal * Number(coupon.discount_value || 0)) / 100;
+        if (coupon.max_discount && discount > Number(coupon.max_discount)) {
+          discount = Number(coupon.max_discount);
+        }
+      } else {
+        discount = Number(coupon.discount_value || 0);
+      }
+      discount = Math.min(discount, subtotal);
+      await client
+        .from('coupons')
+        .update({ usage_count: Number(coupon.usage_count || 0) + 1 })
+        .eq('id', coupon.id);
+    }
+  }
+
+  const freeThreshold =
+    sbSettings.free_shipping_threshold !== undefined && sbSettings.free_shipping_threshold !== null
+      ? Number(sbSettings.free_shipping_threshold)
+      : 9999;
+  const standardShippingFee =
+    sbSettings.default_shipping_fee !== undefined && sbSettings.default_shipping_fee !== null
+      ? Number(sbSettings.default_shipping_fee)
+      : 290;
+
+  const shipping_fee = subtotal >= freeThreshold ? 0 : standardShippingFee;
+  const total_amount = Math.max(0, subtotal - discount + shipping_fee);
+
+  const orderId = body.id || Math.floor(100000000 + Math.random() * 900000000).toString();
   const orderRow = {
     id: orderId,
     customer_id: body.customer_id || null,
-    customer_name: body.customer_name || 'Customer',
+    customer_name: String(body.customer_name).trim(),
     customer_email: body.customer_email || null,
-    phone: body.phone || '03000000000',
-    province: body.province || 'Punjab',
-    city: body.city || 'Lahore',
-    area: body.area || 'Central',
-    street_address: body.street_address || 'Address',
+    phone: cleanPhone,
+    province: String(body.province).trim(),
+    city: String(body.city).trim(),
+    area: String(body.area || body.city || 'Central').trim(),
+    street_address: String(body.street_address).trim(),
     landmark: body.landmark || null,
     order_notes: body.order_notes || null,
-    subtotal: Number(body.subtotal || 0),
-    discount: Number(body.discount || 0),
-    shipping_fee: Number(body.shipping_fee || 290),
-    total_amount: Number(body.total_amount || body.subtotal || 0),
-    payment_method: body.payment_method || 'cod',
+    subtotal,
+    discount,
+    shipping_fee,
+    total_amount,
+    payment_method: paymentMethod,
     payment_status: 'pending',
     order_status: 'Pending',
-    transaction_id: cleanTxId,
-    transaction_ref: cleanTxId,
+    transaction_id: cleanTxId || null,
+    transaction_ref: cleanTxId || null,
   };
 
   const { error: ordErr } = await client.from('orders').insert(orderRow);
@@ -865,12 +1048,25 @@ export async function createOrderInSupabase(
     return { success: false, error: ordErr.message };
   }
 
-  // Trigger New Order Notification
+  const itemRows = verifiedItems.map((it, idx) => ({
+    id: `it_${orderId}_${idx + 1}`,
+    order_id: orderId,
+    product_id: it.product_id,
+    product_name: it.product_name,
+    variant_title: it.variant_title,
+    price: it.price,
+    quantity: it.quantity,
+    image_url: it.image_url,
+    total: it.total,
+  }));
+  await client.from('order_items').insert(itemRows);
+
+  // Deduct stock and emit new_order + low_stock notifications
   try {
     await createNotificationInSupabase({
       type: 'new_order',
       title: `🛒 New Order #${orderId}`,
-      message: `New order of Rs. ${(orderRow.total_amount || 0).toLocaleString('en-PK')} placed by ${orderRow.customer_name} (${orderRow.phone}).`,
+      message: `New order of Rs. ${total_amount.toLocaleString('en-PK')} placed by ${orderRow.customer_name} (${orderRow.phone}).`,
       link: `/admin/orders?order=${orderId}`,
       entity_id: orderId,
     }, envObj);
@@ -878,55 +1074,31 @@ export async function createOrderInSupabase(
     console.warn('Notification trigger warning:', notifErr);
   }
 
-  if (body.items && Array.isArray(body.items)) {
-    const itemRows = body.items.map((it: any, idx: number) => ({
-      id: `it_${orderId}_${idx + 1}`,
-      order_id: orderId,
-      product_id: it.product_id || it.id,
-      product_name: it.product_name || it.name || 'Product',
-      variant_title: it.variant_title || null,
-      price: Number(it.price || 0),
-      quantity: Number(it.quantity || 1),
-      image_url: it.image_url || it.image || null,
-      total: Number((it.price || 0) * (it.quantity || 1)),
-    }));
-    await client.from('order_items').insert(itemRows);
+  for (const it of verifiedItems) {
+    if (it.variant_id && it.variant_stock !== null) {
+      const nextVarStock = Math.max(0, it.variant_stock - it.quantity);
+      await client.from('product_variants').update({ stock: nextVarStock }).eq('id', it.variant_id);
+    }
 
-    // Deduct stock in Supabase products table and check for low stock alerts
-    for (const it of body.items) {
-      const pid = it.product_id || it.id;
-      if (pid) {
-        const { data: pData } = await client
-          .from('products')
-          .select('name, sku, available_stock, low_stock_threshold')
-          .eq('id', pid)
-          .maybeSingle();
+    const newStock = Math.max(0, it.product_stock - it.quantity);
+    await client.from('products').update({ available_stock: newStock }).eq('id', it.product_id);
 
-        if (pData && typeof pData.available_stock === 'number') {
-          const newStock = Math.max(0, pData.available_stock - Number(it.quantity || 1));
-          await client.from('products').update({ available_stock: newStock }).eq('id', pid);
-
-          // Check if stock fell below threshold
-          const threshold = Number(pData.low_stock_threshold ?? 5);
-          if (newStock <= threshold) {
-            try {
-              await createNotificationInSupabase({
-                type: 'low_stock',
-                title: `⚠️ Low Stock Alert: ${pData.name || 'Product'}`,
-                message: `Inventory for "${pData.name || 'Product'}" (${pData.sku || pid}) dropped to ${newStock} units (Threshold: ${threshold}).`,
-                link: `/admin/products?search=${encodeURIComponent(pData.sku || pData.name || '')}`,
-                entity_id: pid,
-              }, envObj);
-            } catch (lErr) {
-              console.warn('Low stock notification warning:', lErr);
-            }
-          }
-        }
+    if (newStock <= it.low_stock_threshold) {
+      try {
+        await createNotificationInSupabase({
+          type: 'low_stock',
+          title: `⚠️ Low Stock Alert: ${it.product_name}`,
+          message: `Inventory for "${it.product_name}" (${it.product_sku}) dropped to ${newStock} units (Threshold: ${it.low_stock_threshold}).`,
+          link: `/admin/products?search=${encodeURIComponent(it.product_sku || it.product_name)}`,
+          entity_id: it.product_id,
+        }, envObj);
+      } catch (lErr) {
+        console.warn('Low stock notification warning:', lErr);
       }
     }
   }
 
-  return { success: true, order: { ...orderRow, items: body.items || [] } };
+  return { success: true, order: { ...orderRow, orderId, items: itemRows } };
 }
 
 // -------------------------------------------------------------------
@@ -1013,6 +1185,119 @@ export async function deleteNotificationInSupabase(
 }
 
 // -------------------------------------------------------------------
+// 9B. CUSTOMER ORDERS, WISHLIST & REMINDERS
+// -------------------------------------------------------------------
+
+export async function fetchCustomerOrdersFromSupabase(
+  user: { id: string; email?: string; phone?: string },
+  envObj?: any
+): Promise<any[] | null> {
+  const allOrders = await fetchOrdersFromSupabase(envObj);
+  if (!allOrders) return null;
+
+  const cleanUserEmail = (user.email || '').trim().toLowerCase();
+  const cleanUserPhone = (user.phone || '').replace(/\D/g, '').slice(-10);
+
+  return allOrders.filter((o: any) => {
+    if (o.customer_id && o.customer_id === user.id) return true;
+    if (cleanUserEmail && o.customer_email && String(o.customer_email).trim().toLowerCase() === cleanUserEmail) return true;
+    if (cleanUserPhone.length > 5 && o.phone) {
+      const orderPhone = String(o.phone).replace(/\D/g, '');
+      if (orderPhone.includes(cleanUserPhone)) return true;
+    }
+    return false;
+  });
+}
+
+export async function fetchWishlistFromSupabase(customerId: string, envObj?: any): Promise<string[] | null> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return null;
+
+  const { data, error } = await client
+    .from('wishlist_items')
+    .select('product_id')
+    .eq('customer_id', customerId);
+
+  if (error || !data) return [];
+  return data.map((r: any) => r.product_id);
+}
+
+export async function toggleWishlistInSupabase(
+  customerId: string,
+  productId: string,
+  envObj?: any
+): Promise<{ inWishlist: boolean } | null> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return null;
+
+  const { data: existing } = await client
+    .from('wishlist_items')
+    .select('id')
+    .eq('customer_id', customerId)
+    .eq('product_id', productId)
+    .maybeSingle();
+
+  if (existing) {
+    await client.from('wishlist_items').delete().eq('customer_id', customerId).eq('product_id', productId);
+    return { inWishlist: false };
+  }
+
+  const id = `wish_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  await client.from('wishlist_items').insert({ id, customer_id: customerId, product_id: productId });
+  return { inWishlist: true };
+}
+
+export async function fetchProductsByIdsFromSupabase(productIds: string[], envObj?: any): Promise<any[] | null> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return null;
+  if (!Array.isArray(productIds) || productIds.length === 0) return [];
+
+  const { data, error } = await client
+    .from('products')
+    .select('*, categories(name, slug)')
+    .in('id', productIds);
+
+  if (error || !data) return [];
+  for (const p of data) {
+    const { data: vars } = await client.from('product_variants').select('*').eq('product_id', p.id);
+    p.variants = vars || [];
+    if (p.categories) {
+      p.category_name = p.categories.name;
+      p.category_slug = p.categories.slug;
+    }
+    if (typeof p.images === 'string') {
+      try {
+        p.images = JSON.parse(p.images);
+      } catch {
+        p.images = [p.images];
+      }
+    }
+  }
+  return data;
+}
+
+export async function createReminderInSupabase(
+  launchSoonId: string,
+  email?: string | null,
+  phone?: string | null,
+  envObj?: any
+): Promise<{ success: boolean; error?: string }> {
+  const client = getSupabaseClient(envObj);
+  if (!client) return { success: false, error: 'Database not configured' };
+
+  const id = `rem_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const { error } = await client.from('reminders').insert({
+    id,
+    launch_soon_id: launchSoonId,
+    email: email || null,
+    phone: phone || null,
+  });
+
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// -------------------------------------------------------------------
 // 9. STAFF & AUTH
 // -------------------------------------------------------------------
 
@@ -1069,17 +1354,24 @@ export async function uploadImageToSupabaseStorage(
   base64Data: string,
   envObj?: any
 ): Promise<string> {
+  const matches = base64Data.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,(.+)$/i);
+  if (!matches) {
+    throw new Error('Only JPEG, PNG, WebP, or GIF image uploads are allowed.');
+  }
+
+  const mimeType = matches[1].toLowerCase();
+  const base64String = matches[2];
+  const bytes = base64ToUint8Array(base64String);
+  if (bytes.byteLength > 5 * 1024 * 1024) {
+    throw new Error('Uploaded image exceeds the 5MB limit.');
+  }
+
   const client = getSupabaseClient(envObj);
   if (!client) return base64Data;
 
   try {
-    const matches = base64Data.match(/^data:(.+);base64,(.+)$/);
-    if (!matches) return base64Data;
-
-    const mimeType = matches[1];
-    const base64String = matches[2];
-    const bytes = base64ToUint8Array(base64String);
-    const ext = filename.split('.').pop() || 'png';
+    const rawExt = (filename.split('.').pop() || 'png').toLowerCase();
+    const ext = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(rawExt) ? rawExt : 'png';
     const filePath = `uploads/${Date.now()}_${Math.random().toString(36).slice(2, 6)}.${ext}`;
 
     const { data, error } = await client.storage.from('product-images').upload(filePath, bytes, {
@@ -1442,8 +1734,11 @@ CREATE TABLE IF NOT EXISTS public.coupons (
   discount_type TEXT NOT NULL,
   discount_value NUMERIC NOT NULL,
   min_order_amount NUMERIC NOT NULL DEFAULT 0,
+  max_discount NUMERIC,
+  usage_limit INTEGER,
   usage_count INTEGER NOT NULL DEFAULT 0,
   is_active INTEGER NOT NULL DEFAULT 1,
+  expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -1473,6 +1768,27 @@ CREATE TABLE IF NOT EXISTS public.slug_redirects (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 16. NOTIFICATIONS TABLE
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  link TEXT,
+  entity_id TEXT,
+  is_read INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 17. REMINDERS TABLE
+CREATE TABLE IF NOT EXISTS public.reminders (
+  id TEXT PRIMARY KEY,
+  launch_soon_id TEXT NOT NULL,
+  email TEXT,
+  phone TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ====================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ====================================================================
@@ -1492,6 +1808,8 @@ ALTER TABLE public.coupons ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.wishlist_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.slug_redirects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reminders ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Public Read Settings" ON public.settings FOR SELECT USING (true);
 CREATE POLICY "Public Read Categories" ON public.categories FOR SELECT USING (true);
@@ -1522,6 +1840,8 @@ CREATE POLICY "Allow All Coupons" ON public.coupons FOR ALL USING (true) WITH CH
 CREATE POLICY "Allow All Wishlist" ON public.wishlist_items FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow All Audit Logs" ON public.audit_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow All Slug Redirects" ON public.slug_redirects FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Notifications" ON public.notifications FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow All Reminders" ON public.reminders FOR ALL USING (true) WITH CHECK (true);
 
 -- ====================================================================
 -- TRIGGERS & FUNCTIONS
@@ -1548,7 +1868,7 @@ CREATE TRIGGER tr_orders_updated_at
       success: true,
       sql: fallbackSql,
       source: 'schema_template',
-      tablesCount: 15,
+      tablesCount: 17,
       databaseUrl: cleanHost,
       timestamp,
     };

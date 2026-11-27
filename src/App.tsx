@@ -72,7 +72,9 @@ function StorefrontApp() {
   const { addToCart } = useCart();
 
   // Navigation & History Scroll Restoration State
-  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
+  const [currentPath, setCurrentPath] = useState<string>(
+    () => window.location.pathname + window.location.search
+  );
   const [mobileTab, setMobileTab] = useState<'home' | 'categories' | 'orders' | 'account' | 'admin'>('home');
   const currentHistoryKeyRef = useRef<string>(
     (window.history.state && typeof window.history.state.historyKey === 'string'
@@ -97,16 +99,17 @@ function StorefrontApp() {
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
 
-  // Route parsing
-  const isProductRoute = currentPath.startsWith('/product/');
-  const productSlug = isProductRoute ? currentPath.replace('/product/', '') : null;
+  // Route parsing (strip query string before matching routes)
+  const [currentPathname, currentSearch = ''] = currentPath.split('?');
+  const isProductRoute = currentPathname.startsWith('/product/');
+  const productSlug = isProductRoute ? currentPathname.replace('/product/', '') : null;
 
-  const isCheckoutRoute = currentPath === '/checkout';
-  const isOrderSuccessRoute = currentPath.startsWith('/order-success/');
-  const orderSuccessId = isOrderSuccessRoute ? currentPath.replace('/order-success/', '').split('?')[0] : null;
+  const isCheckoutRoute = currentPathname === '/checkout';
+  const isOrderSuccessRoute = currentPathname.startsWith('/order-success/');
+  const orderSuccessId = isOrderSuccessRoute ? currentPathname.replace('/order-success/', '') : null;
 
-  const isDashboardRoute = currentPath === '/dashboard' || currentPath === '/orders' || currentPath === '/account';
-  const isAdminRoute = currentPath === '/admin';
+  const isDashboardRoute = currentPathname === '/dashboard' || currentPathname === '/orders' || currentPathname === '/account';
+  const isAdminRoute = currentPathname === '/admin';
   const isHomepageRoute = !isProductRoute && !isCheckoutRoute && !isOrderSuccessRoute && !isDashboardRoute && !isAdminRoute;
 
   const [hasInitializedHomepage, setHasInitializedHomepage] = useState<boolean>(() => isHomepageRoute);
@@ -148,20 +151,21 @@ function StorefrontApp() {
     };
 
     const handlePopState = (e: PopStateEvent) => {
-      const path = window.location.pathname;
+      const path = window.location.pathname + window.location.search;
+      const [pathname] = path.split('?');
       const targetKey =
         (e.state && typeof e.state.historyKey === 'string' ? e.state.historyKey : '') ||
         path;
       currentHistoryKeyRef.current = targetKey;
 
       setCurrentPath(path);
-      if (path.startsWith('/category/')) {
-        setSelectedCategorySlug(path.replace('/category/', ''));
+      if (pathname.startsWith('/category/')) {
+        setSelectedCategorySlug(pathname.replace('/category/', ''));
         document.title = DEFAULT_DOCUMENT_TITLE;
-      } else if (path === '/') {
+      } else if (pathname === '/') {
         setSelectedCategorySlug(null);
         document.title = DEFAULT_DOCUMENT_TITLE;
-      } else if (!path.startsWith('/product/')) {
+      } else if (!pathname.startsWith('/product/')) {
         document.title = DEFAULT_DOCUMENT_TITLE;
       }
 
@@ -223,20 +227,22 @@ function StorefrontApp() {
 
   const navigateTo = (path: string) => {
     saveScrollPosition(currentHistoryKeyRef.current, window.scrollY);
-    if (window.location.pathname !== path) {
+    const currentFull = window.location.pathname + window.location.search;
+    if (currentFull !== path) {
+      const [pathname] = path.split('?');
       const nextKey = createHistoryKey();
       currentHistoryKeyRef.current = nextKey;
       window.history.pushState({ path, historyKey: nextKey }, '', path);
       setCurrentPath(path);
-      if (path.startsWith('/category/')) {
-        setSelectedCategorySlug(path.replace('/category/', ''));
+      if (pathname.startsWith('/category/')) {
+        setSelectedCategorySlug(pathname.replace('/category/', ''));
         document.title = DEFAULT_DOCUMENT_TITLE;
-      } else if (path === '/') {
+      } else if (pathname === '/') {
         setSelectedCategorySlug(null);
         document.title = DEFAULT_DOCUMENT_TITLE;
         window.scrollTo({ top: 0, behavior: 'auto' });
       } else {
-        if (!path.startsWith('/product/')) {
+        if (!pathname.startsWith('/product/')) {
           document.title = DEFAULT_DOCUMENT_TITLE;
         }
         window.scrollTo({ top: 0, behavior: 'auto' });
@@ -360,6 +366,7 @@ function StorefrontApp() {
           <Suspense fallback={<RouteFallback />}>
             <ProductDetailPage
               productSlugOrId={productSlug}
+              settings={homepageData?.settings}
               onBack={() => handleBackNavigation(selectedCategorySlug ? `/category/${selectedCategorySlug}` : '/')}
               onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
               onBuyNow={handleBuyNow}
@@ -384,7 +391,7 @@ function StorefrontApp() {
         ) : isDashboardRoute ? (
           <Suspense fallback={<RouteFallback />}>
             <CustomerDashboard
-              initialOrderId={new URLSearchParams(window.location.search).get('order') || ''}
+              initialOrderId={new URLSearchParams(currentSearch).get('order') || ''}
               onBackToStore={() => navigateTo('/')}
               onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
             />
@@ -410,6 +417,7 @@ function StorefrontApp() {
                       if (url.startsWith('/category/')) {
                         const slug = url.replace('/category/', '');
                         setSelectedCategorySlug(slug);
+                        navigateTo(`/category/${slug}`);
                         setTimeout(() => {
                           document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
                         }, 100);
@@ -497,12 +505,13 @@ function StorefrontApp() {
           settings={homepageData?.settings}
           onNavigateCategory={(slug) => {
             setSelectedCategorySlug(slug);
-            navigateTo('/');
+            navigateTo(`/category/${slug}`);
             setTimeout(() => {
               document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
             }, 100);
           }}
           onOpenTracking={() => setIsTrackingOpen(true)}
+          onNavigateAdmin={() => navigateTo('/admin')}
         />
       )}
 
@@ -537,7 +546,7 @@ function StorefrontApp() {
 
       {/* Slide-over Cart Drawer */}
       <Suspense fallback={null}>
-        <CartDrawer onProceedCheckout={() => navigateTo('/checkout')} />
+        <CartDrawer settings={homepageData?.settings} onProceedCheckout={() => navigateTo('/checkout')} />
       </Suspense>
 
       {/* Slide-over Wishlist Drawer */}
