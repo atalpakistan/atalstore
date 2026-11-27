@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, Heart, Star, Truck, ShieldCheck, RefreshCw, Share2,
   Check, AlertCircle, ShoppingBag, Zap, MessageCircle
@@ -6,6 +6,14 @@ import {
 import { Product, ProductVariant } from '../types';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
+import {
+  fetchProductWithCache,
+  getCachedProduct,
+  getProductViewState,
+  prefetchProduct,
+  preloadImage,
+  saveProductViewState,
+} from '../utils/pageCache';
 
 interface ProductDetailPageProps {
   productSlugOrId: string;
@@ -20,55 +28,164 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
   onNavigateProduct,
   onBuyNow,
 }) => {
-  const [product, setProduct] = useState<Product | null>(null);
-  const [related, setRelated] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
+  const initialCached = getCachedProduct(productSlugOrId);
+  const initialProduct = initialCached.full?.product || initialCached.summary || null;
+  const initialViewState = getProductViewState(productSlugOrId, initialProduct?.id);
+
+  const [product, setProduct] = useState<Product | null>(() => initialProduct);
+  const [related, setRelated] = useState<Product[]>(() => initialCached.full?.related || []);
+  const [loading, setLoading] = useState<boolean>(() => !initialProduct);
   const [error, setError] = useState<string | null>(null);
 
-  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
-  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
-  const [quantity, setQuantity] = useState(1);
+  const [selectedImageIndex, setSelectedImageIndex] = useState<number>(() => initialViewState?.selectedImageIndex ?? 0);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(() => {
+    if (!initialProduct?.variants || initialProduct.variants.length === 0) return null;
+    if (initialViewState?.selectedVariantId) {
+      const matched = initialProduct.variants.find((v) => v.id === initialViewState.selectedVariantId);
+      if (matched) return matched;
+    }
+    return initialProduct.variants[0];
+  });
+  const [quantity, setQuantity] = useState<number>(() => Math.max(1, initialViewState?.quantity ?? 1));
   const [copiedLink, setCopiedLink] = useState(false);
+
+  const activeSlugRef = useRef(productSlugOrId);
+  const hydratedSlugRef = useRef<string | null>(initialProduct ? productSlugOrId : null);
 
   const { addToCart } = useCart();
   const { isInWishlist, toggleWishlist } = useWishlist();
 
+  // Persist user's variation, selected image, and quantity when viewing a hydrated product
   useEffect(() => {
-    async function loadProduct() {
-      setLoading(true);
+    if (!product || hydratedSlugRef.current !== productSlugOrId) return;
+    if (product.slug !== productSlugOrId && product.id !== productSlugOrId) return;
+    saveProductViewState(
+      productSlugOrId,
+      {
+        selectedVariantId: selectedVariant?.id,
+        selectedImageIndex,
+        quantity,
+      },
+      product.id
+    );
+  }, [productSlugOrId, product, selectedVariant?.id, selectedImageIndex, quantity]);
+
+  useEffect(() => {
+    activeSlugRef.current = productSlugOrId;
+    let cancelled = false;
+
+    const preloadProductImages = (prod: Product) => {
+      if (Array.isArray(prod.images)) {
+        prod.images.slice(0, 5).forEach((img) => preloadImage(img));
+      }
+      if (Array.isArray(prod.variants)) {
+        prod.variants.slice(0, 4).forEach((v) => {
+          if (v.image_url) preloadImage(v.image_url);
+        });
+      }
+    };
+
+    const applyLoadedProduct = (
+      nextProduct: Product,
+      nextRelated: Product[],
+      preserveCurrentSelection: boolean
+    ) => {
+      if (cancelled || activeSlugRef.current !== productSlugOrId) return;
+
+      setProduct(nextProduct);
+      setRelated(nextRelated);
       setError(null);
-      try {
-        const res = await fetch(`/api/products/${productSlugOrId}`);
-        const data = await res.json();
-        if (data.redirect_to) {
-          const newSlug = data.redirect_to.replace('/product/', '');
-          onNavigateProduct(newSlug);
-          return;
-        }
-        if (!res.ok) {
-          setError(data.error || 'Product not found');
-          return;
-        }
-        setProduct(data.product);
-        setRelated(data.related || []);
-        setSelectedImageIndex(0);
-        if (data.product.variants && data.product.variants.length > 0) {
-          setSelectedVariant(data.product.variants[0]);
+      document.title = `${nextProduct.name} — ATAL STORE Pakistan`;
+      preloadProductImages(nextProduct);
+
+      const saved = getProductViewState(productSlugOrId, nextProduct.id);
+      if (!preserveCurrentSelection) {
+        setSelectedImageIndex(saved?.selectedImageIndex ?? 0);
+        if (nextProduct.variants && nextProduct.variants.length > 0) {
+          const matched = saved?.selectedVariantId
+            ? nextProduct.variants.find((v) => v.id === saved.selectedVariantId)
+            : null;
+          setSelectedVariant(matched || nextProduct.variants[0]);
         } else {
           setSelectedVariant(null);
         }
-        setQuantity(1);
+        setQuantity(Math.max(1, saved?.quantity ?? 1));
+      } else {
+        setSelectedVariant((prevVariant) => {
+          if (!nextProduct.variants || nextProduct.variants.length === 0) return null;
+          if (prevVariant) {
+            const matched = nextProduct.variants.find((v) => v.id === prevVariant.id);
+            if (matched) return matched;
+          }
+          if (saved?.selectedVariantId) {
+            const matched = nextProduct.variants.find((v) => v.id === saved.selectedVariantId);
+            if (matched) return matched;
+          }
+          return nextProduct.variants[0];
+        });
+      }
 
-        // Update document title for SEO
-        document.title = `${data.product.name} — ATAL STORE Pakistan`;
+      hydratedSlugRef.current = productSlugOrId;
+      setLoading(false);
+    };
+
+    const cached = getCachedProduct(productSlugOrId);
+    const hasImmediateData = Boolean(cached.full?.product || cached.summary);
+
+    if (cached.full?.product) {
+      applyLoadedProduct(cached.full.product, cached.full.related || [], false);
+      if (!cached.isStale) {
+        return () => {
+          cancelled = true;
+        };
+      }
+    } else if (cached.summary) {
+      applyLoadedProduct(cached.summary, [], false);
+    } else {
+      hydratedSlugRef.current = null;
+      setLoading(true);
+      setError(null);
+    }
+
+    async function refreshProduct() {
+      try {
+        const res = await fetchProductWithCache(productSlugOrId, {
+          forceFresh: cached.isStale && Boolean(cached.full),
+        });
+        if (cancelled || activeSlugRef.current !== productSlugOrId) return;
+
+        if (res.data?.redirect_to) {
+          const newSlug = res.data.redirect_to.replace('/product/', '');
+          onNavigateProduct(newSlug);
+          return;
+        }
+
+        if (!res.ok || !res.data?.product) {
+          if (!hasImmediateData) {
+            setError(res.error || 'Product not found');
+            setLoading(false);
+          }
+          return;
+        }
+
+        applyLoadedProduct(
+          res.data.product,
+          res.data.related || [],
+          hasImmediateData
+        );
       } catch (err: any) {
-        setError(err.message || 'Failed to load product details');
-      } finally {
-        setLoading(false);
+        if (!cancelled && activeSlugRef.current === productSlugOrId && !hasImmediateData) {
+          setError(err.message || 'Failed to load product details');
+          setLoading(false);
+        }
       }
     }
 
-    loadProduct();
+    refreshProduct();
+
+    return () => {
+      cancelled = true;
+    };
   }, [productSlugOrId]);
 
   if (loading) {
@@ -203,7 +320,7 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                       : 'border-slate-200 hover:border-slate-400 opacity-75 hover:opacity-100'
                   }`}
                 >
-                  <img src={img} alt={`${product.name} ${idx + 1}`} className="w-full h-full object-cover" />
+                  <img src={img} alt={`${product.name} ${idx + 1}`} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>
@@ -214,6 +331,9 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             <img
               src={selectedVariant?.image_url && selectedImageIndex === 0 ? selectedVariant.image_url : images[selectedImageIndex] || images[0]}
               alt={product.name}
+              loading="eager"
+              decoding="async"
+              fetchPriority="high"
               className="w-full h-full object-cover object-center"
             />
 
@@ -462,6 +582,8 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
             {related.map((rel) => (
               <div
                 key={rel.id}
+                onMouseEnter={() => prefetchProduct(rel.slug || rel.id, rel.images?.[0])}
+                onTouchStart={() => prefetchProduct(rel.slug || rel.id, rel.images?.[0])}
                 onClick={() => onNavigateProduct(rel.slug)}
                 className="bg-white rounded-2xl border border-slate-200 p-3 flex flex-col justify-between cursor-pointer group hover:shadow-lg transition"
               >
@@ -469,6 +591,8 @@ export const ProductDetailPage: React.FC<ProductDetailPageProps> = ({
                   <img
                     src={rel.images?.[0] || '/icon.svg'}
                     alt={rel.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </div>

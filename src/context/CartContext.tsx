@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Product, ProductVariant, CartItem } from '../types';
 
 interface CartContextType {
@@ -6,6 +6,7 @@ interface CartContextType {
   addToCart: (product: Product, variant?: ProductVariant, quantity?: number) => void;
   removeFromCart: (itemId: string) => void;
   updateQuantity: (itemId: string, quantity: number) => void;
+  reconcileProducts: (freshProducts: Product[]) => void;
   clearCart: () => void;
   itemCount: number;
   subtotal: number;
@@ -97,6 +98,49 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
+  const reconcileProducts = useCallback((freshProducts: Product[]) => {
+    if (!Array.isArray(freshProducts) || freshProducts.length === 0) return;
+    const byId = new Map<string, Product>();
+    for (const p of freshProducts) {
+      if (p?.id) byId.set(p.id, p);
+    }
+
+    setItems((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        const pid = item.product_id || item.product?.id;
+        if (!pid) return item;
+        const fresh = byId.get(pid);
+        if (!fresh) return item;
+
+        const freshVariant = item.variant_id && Array.isArray(fresh.variants)
+          ? fresh.variants.find((v) => v.id === item.variant_id) || item.variant
+          : undefined;
+        const freshUnitPrice = Number(freshVariant?.price ?? fresh.sale_price ?? item.unit_price);
+        const qty = Math.max(1, Number(item.quantity || 1));
+        const freshTotalPrice = freshUnitPrice * qty;
+
+        const priceChanged = freshUnitPrice !== item.unit_price || freshTotalPrice !== item.total_price;
+        const stockChanged =
+          fresh.available_stock !== item.product?.available_stock ||
+          (freshVariant && freshVariant.stock !== item.variant?.stock);
+
+        if (!priceChanged && !stockChanged) return item;
+
+        changed = true;
+        return {
+          ...item,
+          product: fresh,
+          variant: freshVariant ?? item.variant,
+          unit_price: freshUnitPrice,
+          total_price: freshTotalPrice,
+        };
+      });
+
+      return changed ? next : prev;
+    });
+  }, []);
+
   const clearCart = () => {
     setItems([]);
   };
@@ -115,6 +159,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
         addToCart,
         removeFromCart,
         updateQuantity,
+        reconcileProducts,
         clearCart,
         itemCount,
         subtotal,

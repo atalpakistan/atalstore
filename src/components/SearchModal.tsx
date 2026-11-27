@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, X, Loader2, ArrowRight } from 'lucide-react';
 import { Product } from '../types';
+import { fetchSearchWithCache, getCachedSearch, prefetchProduct } from '../utils/pageCache';
 
 interface SearchModalProps {
   isOpen: boolean;
@@ -18,27 +19,39 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    if (!trimmed) {
       setResults([]);
+      setLoading(false);
       return;
     }
 
+    const cached = getCachedSearch(trimmed);
+    if (cached) {
+      setResults(cached);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
     const timer = setTimeout(async () => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/products?search=${encodeURIComponent(query.trim())}&limit=8`);
-        if (res.ok) {
-          const data = await res.json();
-          setResults(data.products || []);
+        const prods = await fetchSearchWithCache(trimmed);
+        if (!cancelled) {
+          setResults(prods);
         }
-      } catch {
-        // Ignored
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    }, 250);
+    }, 200);
 
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [query]);
 
   if (!isOpen) return null;
@@ -89,6 +102,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
               {results.map((product) => (
                 <div
                   key={product.id}
+                  onMouseEnter={() => prefetchProduct(product.slug || product.id, product.images?.[0])}
                   onClick={() => {
                     onClose();
                     onSelectProduct(product);
@@ -99,6 +113,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     <img
                       src={product.images?.[0] || '/icon.svg'}
                       alt={product.name}
+                      loading="lazy"
+                      decoding="async"
                       className="w-12 h-12 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
                     />
                     <div className="truncate">

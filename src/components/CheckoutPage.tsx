@@ -1,11 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   ArrowLeft, ShieldCheck, Truck, Lock, CreditCard, Banknote,
   CheckCircle2, AlertCircle, Tag, Loader2
 } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { StoreSettings } from '../types';
+import { Product, StoreSettings } from '../types';
+import {
+  fetchFreshProduct,
+  fetchSettingsWithCache,
+  invalidateHomepageCache,
+  invalidateProductCache,
+} from '../utils/pageCache';
 
 interface CheckoutPageProps {
   settings?: StoreSettings | null;
@@ -34,7 +40,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   onBack,
   onOrderSuccess,
 }) => {
-  const { items, subtotal, clearCart } = useCart();
+  const { items, subtotal, clearCart, reconcileProducts } = useCart();
   const { user } = useAuth();
 
   const [fullName, setFullName] = useState(user?.full_name || '');
@@ -48,6 +54,15 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
   const [orderNotes, setOrderNotes] = useState('');
 
   const [liveSettings, setLiveSettings] = useState<StoreSettings | null | undefined>(settings);
+  const [verifyingCart, setVerifyingCart] = useState(false);
+  const [priceNotice, setPriceNotice] = useState<string | null>(null);
+  const [stockIssues, setStockIssues] = useState<string[]>([]);
+  const verifyPromiseRef = useRef<Promise<string[]> | null>(null);
+
+  const itemsVerifyKey = useMemo(
+    () => items.map((it) => `${it.product_id || it.product?.id}:${it.variant_id || ''}:${it.quantity}:${it.unit_price}`).join('|'),
+    [items]
+  );
 
   useEffect(() => {
     setLiveSettings(settings);
@@ -55,8 +70,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/settings')
-      .then((r) => (r.ok ? r.json() : null))
+    fetchSettingsWithCache(true)
       .then((data) => {
         if (!cancelled && data && typeof data === 'object') {
           setLiveSettings((prev) => ({ ...(prev || {}), ...data }));
@@ -67,6 +81,71 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       cancelled = true;
     };
   }, []);
+
+  // Reconcile live prices & stock in background whenever checkout opens or cart changes
+  const runLiveCartVerification = async (): Promise<string[]> => {
+    if (items.length === 0) {
+      setStockIssues([]);
+      return [];
+    }
+    setVerifyingCart(true);
+    try {
+      const uniqueIds = Array.from(
+        new Set(items.map((it) => it.product_id || it.product?.id).filter(Boolean))
+      ) as string[];
+
+      const fetched = await Promise.all(uniqueIds.map((pid) => fetchFreshProduct(pid)));
+      const validProducts = fetched.filter((p): p is Product => Boolean(p && p.id));
+
+      if (validProducts.length > 0) {
+        const byId = new Map(validProducts.map((p) => [p.id, p]));
+        let priceUpdated = false;
+        const issues: string[] = [];
+
+        for (const item of items) {
+          const pid = item.product_id || item.product?.id;
+          const fresh = pid ? byId.get(pid) : undefined;
+          if (!fresh) continue;
+
+          const matchedVariant = item.variant_id && Array.isArray(fresh.variants)
+            ? fresh.variants.find((v) => v.id === item.variant_id)
+            : undefined;
+
+          const livePrice = Number(matchedVariant?.price ?? fresh.sale_price ?? item.unit_price);
+          if (livePrice !== Number(item.unit_price)) {
+            priceUpdated = true;
+          }
+
+          const liveStock = Number(
+            matchedVariant ? matchedVariant.stock : (fresh.available_stock ?? 0)
+          );
+          const qty = Math.max(1, Number(item.quantity || 1));
+          if (liveStock <= 0) {
+            issues.push(`${fresh.name} is currently out of stock.`);
+          } else if (qty > liveStock) {
+            issues.push(`${fresh.name} only has ${liveStock} in stock (you selected ${qty}).`);
+          }
+        }
+
+        reconcileProducts(validProducts);
+        if (priceUpdated) {
+          setPriceNotice('Product pricing was refreshed to reflect the latest live store price.');
+        }
+        setStockIssues(issues);
+        return issues;
+      }
+      return [];
+    } catch {
+      return [];
+    } finally {
+      setVerifyingCart(false);
+    }
+  };
+
+  useEffect(() => {
+    const p = runLiveCartVerification();
+    verifyPromiseRef.current = p;
+  }, [itemsVerifyKey]);
 
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'jazzcash' | 'easypaisa'>(() => {
     const codOn = settings?.cod_enabled !== false && String(settings?.cod_enabled) !== 'false';
@@ -172,6 +251,16 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
     setIsSubmitting(true);
 
     try {
+      // Ensure live price & stock verification completed before final order placement
+      const latestIssues = verifyPromiseRef.current
+        ? await verifyPromiseRef.current
+        : await runLiveCartVerification();
+
+      if (latestIssues.length > 0) {
+        setSubmitError(latestIssues[0]);
+        setIsSubmitting(false);
+        return;
+      }
       console.log('🛍️ [Checkout Cart Audit] Submitting items to /api/orders:', items.map(it => ({
         product_id: it.product_id,
         name: it.product?.name,
@@ -247,6 +336,9 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
       } catch {
         // Ignored
       }
+
+      invalidateProductCache();
+      invalidateHomepageCache();
 
       // 2. If Cash on Delivery, complete immediately
       if (paymentMethod === 'cod') {
@@ -649,6 +741,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                     <img
                       src={paymentMethod === 'jazzcash' ? jcQrUrl : epQrUrl}
                       alt={`${paymentMethod === 'jazzcash' ? 'JazzCash' : 'Easypaisa'} Payment QR Code`}
+                      decoding="async"
                       className="w-32 h-32 object-contain"
                     />
                   </div>
@@ -721,6 +814,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
                       <img
                         src={item.variant?.image_url || item.product?.images?.[0] || '/icon.svg'}
                         alt={item.product?.name || 'Product'}
+                        decoding="async"
                         className="w-10 h-10 rounded-lg object-cover bg-slate-100 border border-slate-200 shrink-0"
                       />
                       <div className="truncate">
@@ -814,6 +908,31 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
               </div>
             </div>
 
+            {verifyingCart && (
+              <div className="p-2.5 bg-slate-50 border border-slate-200 text-slate-600 rounded-xl text-[11px] flex items-center gap-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#093824] shrink-0" />
+                <span>Verifying live stock and pricing...</span>
+              </div>
+            )}
+
+            {priceNotice && (
+              <div className="p-2.5 bg-amber-50 border border-amber-200 text-amber-800 rounded-xl text-[11px] flex items-center gap-2 font-medium">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{priceNotice}</span>
+              </div>
+            )}
+
+            {stockIssues.length > 0 && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs space-y-1 font-medium">
+                {stockIssues.map((issue, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{issue}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {submitError && (
               <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs flex items-center gap-2 font-medium">
                 <AlertCircle className="w-4 h-4 shrink-0" />
@@ -824,7 +943,7 @@ export const CheckoutPage: React.FC<CheckoutPageProps> = ({
             {/* Confirm & Place Order CTA */}
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || stockIssues.length > 0}
               className="w-full py-4 px-6 bg-[#093824] hover:bg-[#062819] text-amber-300 font-bold text-sm sm:text-base rounded-2xl shadow-xl transition flex items-center justify-center gap-2 transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50"
             >
               {isSubmitting ? (

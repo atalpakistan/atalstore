@@ -5,9 +5,10 @@ import { Banner } from '../types';
 interface CarouselProps {
   banners: Banner[];
   onNavigateUrl: (url: string) => void;
+  isVisible?: boolean;
 }
 
-export const Carousel: React.FC<CarouselProps> = ({ banners, onNavigateUrl }) => {
+export const Carousel: React.FC<CarouselProps> = ({ banners, onNavigateUrl, isVisible = true }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -15,9 +16,9 @@ export const Carousel: React.FC<CarouselProps> = ({ banners, onNavigateUrl }) =>
 
   const activeBanners = banners.filter((b) => b.is_active);
 
-  // Auto advance slides every 5.5s
+  // Auto advance slides every 5.5s only while visible
   useEffect(() => {
-    if (activeBanners.length <= 1) return;
+    if (activeBanners.length <= 1 || !isVisible) return;
 
     timerRef.current = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % activeBanners.length);
@@ -26,7 +27,7 @@ export const Carousel: React.FC<CarouselProps> = ({ banners, onNavigateUrl }) =>
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [activeBanners.length]);
+  }, [activeBanners.length, isVisible]);
 
   const handlePrev = () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -82,6 +83,9 @@ export const Carousel: React.FC<CarouselProps> = ({ banners, onNavigateUrl }) =>
             <img
               src={banner.image_url}
               alt={banner.title}
+              loading={index === 0 ? 'eager' : 'lazy'}
+              decoding="async"
+              fetchPriority={index === 0 ? 'high' : 'low'}
               className="w-full h-full object-cover object-center"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1610030469983-98e550d6193c?auto=format&fit=crop&w=1600&q=80';

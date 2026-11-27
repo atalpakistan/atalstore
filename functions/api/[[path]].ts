@@ -195,13 +195,18 @@ export const onRequest = async (context: { request: Request; params: { path?: st
   // PUBLIC ENDPOINTS
   // -------------------------------------------------------------
 
+  const isFreshRequest = url.searchParams.get('fresh') === '1';
+  const publicCacheHeaders = {
+    'Cache-Control': isFreshRequest ? 'no-store' : 'public, max-age=30, stale-while-revalidate=120',
+  };
+
   // 1. /api/config & /api/settings
   if ((endpoint === 'config' || endpoint === 'settings') && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
       const sbSettings = await fetchSettingsFromSupabase(env);
-      if (sbSettings) return jsonResponse(sbSettings);
+      if (sbSettings) return jsonResponse(sbSettings, 200, publicCacheHeaders);
     }
-    return jsonResponse(DEFAULT_SETTINGS);
+    return jsonResponse(DEFAULT_SETTINGS, 200, publicCacheHeaders);
   }
 
   // 2. /api/homepage
@@ -233,7 +238,7 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         new_launches: resolvedProducts.filter((p: any) => p.new_launch === 1),
         launch_soon: resolvedLaunchSoon,
         catalog_sample: resolvedProducts.slice(0, 12),
-      });
+      }, 200, publicCacheHeaders);
     }
 
     return jsonResponse({
@@ -246,16 +251,16 @@ export const onRequest = async (context: { request: Request; params: { path?: st
       new_launches: DEFAULT_PRODUCTS.filter((p: any) => p.new_launch === 1),
       launch_soon: [],
       catalog_sample: DEFAULT_PRODUCTS.slice(0, 12),
-    });
+    }, 200, publicCacheHeaders);
   }
 
   // 3. /api/categories
   if (endpoint === 'categories' && request.method === 'GET') {
     if (isSupabaseConfigured(env)) {
       const cats = await fetchCategoriesFromSupabase(env);
-      if (cats && cats.length > 0) return jsonResponse(cats);
+      if (cats && cats.length > 0) return jsonResponse(cats, 200, publicCacheHeaders);
     }
-    return jsonResponse(DEFAULT_CATEGORIES);
+    return jsonResponse(DEFAULT_CATEGORIES, 200, publicCacheHeaders);
   }
 
   // 4. /api/products
@@ -286,13 +291,13 @@ export const onRequest = async (context: { request: Request; params: { path?: st
         return jsonResponse({
           products: prods,
           pagination: { page: 1, limit: 50, total: prods.length, totalPages: 1 },
-        });
+        }, 200, publicCacheHeaders);
       }
     }
     return jsonResponse({
       products: DEFAULT_PRODUCTS,
       pagination: { page: 1, limit: 50, total: DEFAULT_PRODUCTS.length, totalPages: 1 },
-    });
+    }, 200, publicCacheHeaders);
   }
 
   // Single Product
@@ -300,14 +305,14 @@ export const onRequest = async (context: { request: Request; params: { path?: st
     const slugOrId = endpoint.replace(/^products\//, '');
     if (isSupabaseConfigured(env)) {
       const res = await fetchProductBySlugOrIdFromSupabase(slugOrId, env);
-      if (res) return jsonResponse(res);
+      if (res) return jsonResponse(res, 200, publicCacheHeaders);
     }
     const rawProduct = DEFAULT_PRODUCTS.find((p: any) => p.slug === slugOrId || p.id === slugOrId);
     if (!rawProduct) {
       return jsonResponse({ error: 'Product not found' }, 404);
     }
     const related = DEFAULT_PRODUCTS.filter((p: any) => p.id !== rawProduct.id).slice(0, 4);
-    return jsonResponse({ product: rawProduct, related });
+    return jsonResponse({ product: rawProduct, related }, 200, publicCacheHeaders);
   }
 
   // Place Order

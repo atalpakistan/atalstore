@@ -3,6 +3,7 @@ import { Sparkles, ArrowRight, ShieldCheck, Heart } from 'lucide-react';
 import { Product } from '../types';
 import { useWishlist } from '../context/WishlistContext';
 import { useCart } from '../context/CartContext';
+import { prefetchProduct } from '../utils/pageCache';
 
 interface SpotlightSectionProps {
   products: Product[];
@@ -74,11 +75,15 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
             <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-6 items-center mt-4 pt-6 border-t border-emerald-800/60">
               <div
                 className="aspect-square rounded-2xl overflow-hidden bg-white/10 p-2 cursor-pointer"
+                onMouseEnter={() => prefetchProduct(primarySpotlight.slug || primarySpotlight.id, primarySpotlight.images?.[0])}
+                onTouchStart={() => prefetchProduct(primarySpotlight.slug || primarySpotlight.id, primarySpotlight.images?.[0])}
                 onClick={() => onSelectProduct(primarySpotlight)}
               >
                 <img
                   src={primarySpotlight.images?.[0] || '/icon.svg'}
                   alt={primarySpotlight.name}
+                  loading="lazy"
+                  decoding="async"
                   className="w-full h-full object-cover rounded-xl group-hover:scale-105 transition-transform duration-500"
                 />
               </div>
@@ -125,6 +130,8 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
             return (
               <div
                 key={item.id}
+                onMouseEnter={() => prefetchProduct(item.slug || item.id, item.images?.[0])}
+                onTouchStart={() => prefetchProduct(item.slug || item.id, item.images?.[0])}
                 onClick={() => onSelectProduct(item)}
                 className="bg-white border border-slate-200/90 rounded-2xl p-4 flex items-center gap-4 hover:shadow-lg transition-all duration-300 cursor-pointer group"
               >
@@ -132,6 +139,8 @@ export const SpotlightSection: React.FC<SpotlightSectionProps> = ({
                   <img
                     src={item.images?.[0] || '/icon.svg'}
                     alt={item.name}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 </div>

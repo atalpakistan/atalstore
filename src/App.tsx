@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from 'react';
-import { safeFetchJson } from './utils/api';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
 import { WishlistProvider } from './context/WishlistContext';
@@ -15,69 +14,184 @@ import { SpotlightSection } from './components/SpotlightSection';
 import { CatalogGridSection } from './components/CatalogGridSection';
 import { NewLaunchSection } from './components/NewLaunchSection';
 import { LaunchSoonSection } from './components/LaunchSoonSection';
-import { ProductDetailPage } from './components/ProductDetailPage';
-import { CheckoutPage } from './components/CheckoutPage';
-import { OrderSuccessPage } from './components/OrderSuccessPage';
-import { CartDrawer } from './components/CartDrawer';
-import { WishlistDrawer } from './components/WishlistDrawer';
-import { SearchModal } from './components/SearchModal';
-import { OrderTrackingModal } from './components/OrderTrackingModal';
-import { AuthModal } from './components/AuthModal';
-import { AdminDashboard } from './components/AdminDashboard';
-import { CustomerDashboard } from './components/CustomerDashboard';
-import { PWAInstallButton } from './components/PWAInstallButton';
 import { FloatingWhatsApp } from './components/FloatingWhatsApp';
 
-import { Product, ProductVariant, HomepagePayload, StoreSettings } from './types';
+import {
+  createHistoryKey,
+  fetchHomepageWithCache,
+  getCachedHomepage,
+  getScrollPosition,
+  invalidateAllStoreCache,
+  saveScrollPosition,
+} from './utils/pageCache';
+import { Product, ProductVariant, HomepagePayload } from './types';
 import { Loader2 } from 'lucide-react';
+
+const ProductDetailPage = lazy(() =>
+  import('./components/ProductDetailPage').then((m) => ({ default: m.ProductDetailPage }))
+);
+const CheckoutPage = lazy(() =>
+  import('./components/CheckoutPage').then((m) => ({ default: m.CheckoutPage }))
+);
+const OrderSuccessPage = lazy(() =>
+  import('./components/OrderSuccessPage').then((m) => ({ default: m.OrderSuccessPage }))
+);
+const CartDrawer = lazy(() =>
+  import('./components/CartDrawer').then((m) => ({ default: m.CartDrawer }))
+);
+const WishlistDrawer = lazy(() =>
+  import('./components/WishlistDrawer').then((m) => ({ default: m.WishlistDrawer }))
+);
+const SearchModal = lazy(() =>
+  import('./components/SearchModal').then((m) => ({ default: m.SearchModal }))
+);
+const OrderTrackingModal = lazy(() =>
+  import('./components/OrderTrackingModal').then((m) => ({ default: m.OrderTrackingModal }))
+);
+const AuthModal = lazy(() =>
+  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+);
+const AdminDashboard = lazy(() =>
+  import('./components/AdminDashboard').then((m) => ({ default: m.AdminDashboard }))
+);
+const CustomerDashboard = lazy(() =>
+  import('./components/CustomerDashboard').then((m) => ({ default: m.CustomerDashboard }))
+);
+
+const DEFAULT_DOCUMENT_TITLE = 'ATAL — Smart Shop. Live Better';
+
+const RouteFallback = () => (
+  <div className="min-h-[50vh] flex flex-col items-center justify-center py-20 text-slate-400">
+    <Loader2 className="w-8 h-8 animate-spin text-[#093824] mb-3" />
+    <p className="text-xs font-medium">Loading...</p>
+  </div>
+);
 
 function StorefrontApp() {
   const { user, isAdmin, openAuthModal } = useAuth();
-  const { addToCart, setIsCartOpen } = useCart();
+  const { addToCart } = useCart();
 
-  // Navigation State
+  // Navigation & History Scroll Restoration State
   const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
   const [mobileTab, setMobileTab] = useState<'home' | 'categories' | 'orders' | 'account' | 'admin'>('home');
+  const currentHistoryKeyRef = useRef<string>(
+    (window.history.state && typeof window.history.state.historyKey === 'string'
+      ? window.history.state.historyKey
+      : '') || createHistoryKey()
+  );
 
-  // Homepage Payload from Server
-  const [homepageData, setHomepageData] = useState<HomepagePayload | null>(null);
-  const [loadingHomepage, setLoadingHomepage] = useState(true);
+  // Homepage Payload from Cache / Server
+  const initialCachedHomepage = getCachedHomepage();
+  const [homepageData, setHomepageData] = useState<HomepagePayload | null>(() => initialCachedHomepage.data);
+  const [loadingHomepage, setLoadingHomepage] = useState<boolean>(() => !initialCachedHomepage.data);
 
   // Selected Filter Category Slug
-  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string | null>(null);
+  const [selectedCategorySlug, setSelectedCategorySlug] = useState<string | null>(() =>
+    window.location.pathname.startsWith('/category/')
+      ? window.location.pathname.replace('/category/', '')
+      : null
+  );
 
   // Modals
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isTrackingOpen, setIsTrackingOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
 
-  // Handle browser back / forward navigation and Android gestures
+  // Route parsing
+  const isProductRoute = currentPath.startsWith('/product/');
+  const productSlug = isProductRoute ? currentPath.replace('/product/', '') : null;
+
+  const isCheckoutRoute = currentPath === '/checkout';
+  const isOrderSuccessRoute = currentPath.startsWith('/order-success/');
+  const orderSuccessId = isOrderSuccessRoute ? currentPath.replace('/order-success/', '').split('?')[0] : null;
+
+  const isDashboardRoute = currentPath === '/dashboard' || currentPath === '/orders' || currentPath === '/account';
+  const isAdminRoute = currentPath === '/admin';
+  const isHomepageRoute = !isProductRoute && !isCheckoutRoute && !isOrderSuccessRoute && !isDashboardRoute && !isAdminRoute;
+
+  const [hasInitializedHomepage, setHasInitializedHomepage] = useState<boolean>(() => isHomepageRoute);
   useEffect(() => {
+    if (isHomepageRoute && !hasInitializedHomepage) {
+      setHasInitializedHomepage(true);
+    }
+  }, [isHomepageRoute, hasInitializedHomepage]);
+
+  const restoreScrollPosition = (targetY: number) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: targetY, behavior: 'auto' });
+      });
+    });
+  };
+
+  // Manual scroll restoration + continuous RAF-throttled scroll tracking + popstate handling
+  useEffect(() => {
+    if ('scrollRestoration' in window.history) {
+      window.history.scrollRestoration = 'manual';
+    }
+
+    if (!window.history.state || !window.history.state.historyKey) {
+      window.history.replaceState(
+        { ...(window.history.state || {}), path: window.location.pathname, historyKey: currentHistoryKeyRef.current },
+        '',
+        window.location.pathname + window.location.search
+      );
+    }
+
+    let scrollRaf: number | null = null;
+    const handleScroll = () => {
+      if (scrollRaf !== null) return;
+      scrollRaf = requestAnimationFrame(() => {
+        scrollRaf = null;
+        saveScrollPosition(currentHistoryKeyRef.current, window.scrollY);
+      });
+    };
+
     const handlePopState = (e: PopStateEvent) => {
       const path = window.location.pathname;
+      const targetKey =
+        (e.state && typeof e.state.historyKey === 'string' ? e.state.historyKey : '') ||
+        path;
+      currentHistoryKeyRef.current = targetKey;
+
       setCurrentPath(path);
       if (path.startsWith('/category/')) {
         setSelectedCategorySlug(path.replace('/category/', ''));
+        document.title = DEFAULT_DOCUMENT_TITLE;
       } else if (path === '/') {
         setSelectedCategorySlug(null);
+        document.title = DEFAULT_DOCUMENT_TITLE;
+      } else if (!path.startsWith('/product/')) {
+        document.title = DEFAULT_DOCUMENT_TITLE;
       }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      const savedY = getScrollPosition(targetKey);
+      restoreScrollPosition(savedY);
     };
 
-    // Initialize category slug if starting on /category/:slug
-    if (window.location.pathname.startsWith('/category/')) {
-      setSelectedCategorySlug(window.location.pathname.replace('/category/', ''));
-    }
-
+    window.addEventListener('scroll', handleScroll, { passive: true });
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    return () => {
+      if (scrollRaf !== null) cancelAnimationFrame(scrollRaf);
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
-  // Fetch Homepage Data
-  const fetchHomepage = async () => {
+  // Fetch Homepage Data with SWR caching
+  const fetchHomepage = async (forceFresh = false) => {
+    const cached = !forceFresh ? getCachedHomepage() : { data: null, isStale: true };
+    if (cached.data) {
+      setHomepageData(cached.data);
+      setLoadingHomepage(false);
+      if (!cached.isStale) return;
+    } else if (!homepageData) {
+      setLoadingHomepage(true);
+    }
+
     try {
-      const { ok, data } = await safeFetchJson<HomepagePayload>('/api/homepage');
-      if (ok && data) {
+      const data = await fetchHomepageWithCache(forceFresh || cached.isStale);
+      if (data) {
         setHomepageData(data);
       }
     } catch {
@@ -91,37 +205,53 @@ function StorefrontApp() {
     fetchHomepage();
   }, []);
 
+  // Preload critical secondary route chunks on idle after homepage renders
+  useEffect(() => {
+    const prefetchChunks = () => {
+      void import('./components/ProductDetailPage');
+      void import('./components/CheckoutPage');
+      void import('./components/CartDrawer');
+    };
+    const w = window as any;
+    if (typeof w.requestIdleCallback === 'function') {
+      const id = w.requestIdleCallback(prefetchChunks, { timeout: 2500 });
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const timer = setTimeout(prefetchChunks, 1200);
+    return () => clearTimeout(timer);
+  }, []);
+
   const navigateTo = (path: string) => {
+    saveScrollPosition(currentHistoryKeyRef.current, window.scrollY);
     if (window.location.pathname !== path) {
-      window.history.pushState({ path }, '', path);
+      const nextKey = createHistoryKey();
+      currentHistoryKeyRef.current = nextKey;
+      window.history.pushState({ path, historyKey: nextKey }, '', path);
       setCurrentPath(path);
       if (path.startsWith('/category/')) {
         setSelectedCategorySlug(path.replace('/category/', ''));
+        document.title = DEFAULT_DOCUMENT_TITLE;
       } else if (path === '/') {
         setSelectedCategorySlug(null);
+        document.title = DEFAULT_DOCUMENT_TITLE;
+        window.scrollTo({ top: 0, behavior: 'auto' });
+      } else {
+        if (!path.startsWith('/product/')) {
+          document.title = DEFAULT_DOCUMENT_TITLE;
+        }
+        window.scrollTo({ top: 0, behavior: 'auto' });
       }
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
   const handleBackNavigation = (fallbackPath: string = '/') => {
+    saveScrollPosition(currentHistoryKeyRef.current, window.scrollY);
     if (window.history.length > 1 && window.history.state !== null) {
       window.history.back();
     } else {
       navigateTo(fallbackPath);
     }
   };
-
-  // Route parsing
-  const isProductRoute = currentPath.startsWith('/product/');
-  const productSlug = isProductRoute ? currentPath.replace('/product/', '') : null;
-
-  const isCheckoutRoute = currentPath === '/checkout';
-  const isOrderSuccessRoute = currentPath.startsWith('/order-success/');
-  const orderSuccessId = isOrderSuccessRoute ? currentPath.replace('/order-success/', '').split('?')[0] : null;
-
-  const isDashboardRoute = currentPath === '/dashboard' || currentPath === '/orders' || currentPath === '/account';
-  const isAdminRoute = currentPath === '/admin';
 
   // Handle Buy Now
   const handleBuyNow = (product: Product, variant?: ProductVariant, quantity = 1) => {
@@ -175,21 +305,27 @@ function StorefrontApp() {
               </button>
             </div>
           </div>
-          <AuthModal />
+          <Suspense fallback={null}>
+            <AuthModal />
+          </Suspense>
         </div>
       );
     }
     return (
-      <AdminDashboard
-        onBackToStore={() => {
-          fetchHomepage();
-          handleBackNavigation('/');
-        }}
-        onNavigateProduct={(slug) => {
-          fetchHomepage();
-          navigateTo(`/product/${slug}`);
-        }}
-      />
+      <Suspense fallback={<RouteFallback />}>
+        <AdminDashboard
+          onBackToStore={() => {
+            invalidateAllStoreCache();
+            void fetchHomepage(true);
+            handleBackNavigation('/');
+          }}
+          onNavigateProduct={(slug) => {
+            invalidateAllStoreCache();
+            void fetchHomepage(true);
+            navigateTo(`/product/${slug}`);
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -221,34 +357,44 @@ function StorefrontApp() {
       {/* Main Content Area */}
       <main className="flex-1">
         {isProductRoute && productSlug ? (
-          <ProductDetailPage
-            productSlugOrId={productSlug}
-            onBack={() => handleBackNavigation(selectedCategorySlug ? `/category/${selectedCategorySlug}` : '/')}
-            onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
-            onBuyNow={handleBuyNow}
-          />
+          <Suspense fallback={<RouteFallback />}>
+            <ProductDetailPage
+              productSlugOrId={productSlug}
+              onBack={() => handleBackNavigation(selectedCategorySlug ? `/category/${selectedCategorySlug}` : '/')}
+              onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
+              onBuyNow={handleBuyNow}
+            />
+          </Suspense>
         ) : isCheckoutRoute ? (
-          <CheckoutPage
-            settings={homepageData?.settings}
-            onBack={() => handleBackNavigation('/')}
-            onOrderSuccess={(orderId) => navigateTo(`/order-success/${orderId}`)}
-          />
+          <Suspense fallback={<RouteFallback />}>
+            <CheckoutPage
+              settings={homepageData?.settings}
+              onBack={() => handleBackNavigation('/')}
+              onOrderSuccess={(orderId) => navigateTo(`/order-success/${orderId}`)}
+            />
+          </Suspense>
         ) : isOrderSuccessRoute && orderSuccessId ? (
-          <OrderSuccessPage
-            orderId={orderSuccessId}
-            onNavigateHome={() => navigateTo('/')}
-            onNavigateTrack={() => navigateTo(`/dashboard?order=${orderSuccessId}`)}
-          />
+          <Suspense fallback={<RouteFallback />}>
+            <OrderSuccessPage
+              orderId={orderSuccessId}
+              onNavigateHome={() => navigateTo('/')}
+              onNavigateTrack={() => navigateTo(`/dashboard?order=${orderSuccessId}`)}
+            />
+          </Suspense>
         ) : isDashboardRoute ? (
-          <CustomerDashboard
-            initialOrderId={new URLSearchParams(window.location.search).get('order') || ''}
-            onBackToStore={() => navigateTo('/')}
-            onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
-          />
-        ) : (
-          /* HOMEPAGE IN EXACT SPECIFIED SECTION ORDER */
-          <div>
-            {loadingHomepage ? (
+          <Suspense fallback={<RouteFallback />}>
+            <CustomerDashboard
+              initialOrderId={new URLSearchParams(window.location.search).get('order') || ''}
+              onBackToStore={() => navigateTo('/')}
+              onNavigateProduct={(slug) => navigateTo(`/product/${slug}`)}
+            />
+          </Suspense>
+        ) : null}
+
+        {/* Keep Homepage mounted in memory once initialized for zero-latency Back restoration */}
+        {(hasInitializedHomepage || isHomepageRoute) && (
+          <div className={isHomepageRoute ? '' : 'hidden'} aria-hidden={!isHomepageRoute}>
+            {loadingHomepage && !homepageData ? (
               <div className="py-24 flex flex-col items-center justify-center text-slate-400">
                 <Loader2 className="w-10 h-10 animate-spin text-[#093824] mb-3" />
                 <p className="text-xs font-semibold">ATAL STORE — Smart Shop. Live Better...</p>
@@ -259,6 +405,7 @@ function StorefrontApp() {
                 {isSectionEnabled('carousel') && (
                   <Carousel
                     banners={homepageData?.banners || []}
+                    isVisible={isHomepageRoute}
                     onNavigateUrl={(url) => {
                       if (url.startsWith('/category/')) {
                         const slug = url.replace('/category/', '');
@@ -315,6 +462,7 @@ function StorefrontApp() {
                   <CatalogGridSection
                     categories={homepageData?.categories || []}
                     initialCategorySlug={selectedCategorySlug}
+                    initialProducts={homepageData?.catalog_sample}
                     onSelectProduct={(p) => navigateTo(`/product/${p.slug}`)}
                   />
                 )}
@@ -388,30 +536,46 @@ function StorefrontApp() {
       )}
 
       {/* Slide-over Cart Drawer */}
-      <CartDrawer onProceedCheckout={() => navigateTo('/checkout')} />
+      <Suspense fallback={null}>
+        <CartDrawer onProceedCheckout={() => navigateTo('/checkout')} />
+      </Suspense>
 
       {/* Slide-over Wishlist Drawer */}
-      <WishlistDrawer
-        isOpen={isWishlistOpen}
-        onClose={() => setIsWishlistOpen(false)}
-        onSelectProduct={(p) => navigateTo(`/product/${p.slug}`)}
-      />
+      {isWishlistOpen && (
+        <Suspense fallback={null}>
+          <WishlistDrawer
+            isOpen={isWishlistOpen}
+            onClose={() => setIsWishlistOpen(false)}
+            onSelectProduct={(p) => navigateTo(`/product/${p.slug}`)}
+          />
+        </Suspense>
+      )}
 
       {/* Instant Search Modal */}
-      <SearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
-        onSelectProduct={(p) => navigateTo(`/product/${p.slug}`)}
-      />
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <SearchModal
+            isOpen={isSearchOpen}
+            onClose={() => setIsSearchOpen(false)}
+            onSelectProduct={(p) => navigateTo(`/product/${p.slug}`)}
+          />
+        </Suspense>
+      )}
 
       {/* Order Tracking Modal */}
-      <OrderTrackingModal
-        isOpen={isTrackingOpen}
-        onClose={() => setIsTrackingOpen(false)}
-      />
+      {isTrackingOpen && (
+        <Suspense fallback={null}>
+          <OrderTrackingModal
+            isOpen={isTrackingOpen}
+            onClose={() => setIsTrackingOpen(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Customer & Admin Authentication Modal */}
-      <AuthModal />
+      <Suspense fallback={null}>
+        <AuthModal />
+      </Suspense>
     </div>
   );
 }

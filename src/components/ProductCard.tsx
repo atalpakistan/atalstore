@@ -3,13 +3,14 @@ import { Heart, Star, Eye, ShoppingBag } from 'lucide-react';
 import { Product } from '../types';
 import { useWishlist } from '../context/WishlistContext';
 import { useCart } from '../context/CartContext';
+import { prefetchProduct } from '../utils/pageCache';
 
 interface ProductCardProps {
   product: Product;
   onSelectProduct: (product: Product) => void;
 }
 
-export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProduct }) => {
+export const ProductCard: React.FC<ProductCardProps> = React.memo(({ product, onSelectProduct }) => {
   const { isInWishlist, toggleWishlist } = useWishlist();
   const { addToCart } = useCart();
   const inWishlist = isInWishlist(product.id);
@@ -25,8 +26,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProdu
   const isLowStock = product.available_stock > 0 && product.available_stock <= product.low_stock_threshold;
   const isOutOfStock = product.available_stock <= 0;
 
+  const handlePrefetch = () => {
+    prefetchProduct(product.slug || product.id, mainImage);
+  };
+
   return (
-    <div className="group relative bg-white rounded-2xl border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden">
+    <div
+      onMouseEnter={handlePrefetch}
+      onTouchStart={handlePrefetch}
+      className="group relative bg-white rounded-2xl border border-slate-200/80 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden"
+    >
       
       {/* Top Image Container */}
       <div className="relative aspect-[4/5] bg-slate-100 overflow-hidden cursor-pointer" onClick={() => onSelectProduct(product)}>
@@ -34,6 +43,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProdu
           src={mainImage}
           alt={product.name}
           loading="lazy"
+          decoding="async"
           className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
           onError={(e) => {
             (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=600&q=80';
@@ -148,4 +158,4 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onSelectProdu
       </div>
     </div>
   );
-};
+});

@@ -26,8 +26,21 @@ async function startServer() {
     next();
   });
 
-  // Serve static uploads
-  app.use('/uploads', express.static(path.resolve(__dirname, 'public', 'uploads')));
+  // Serve static uploads & brand assets with browser cache headers
+  app.use(
+    '/uploads',
+    express.static(path.resolve(__dirname, 'public', 'uploads'), {
+      maxAge: '7d',
+      etag: true,
+    })
+  );
+  app.use(
+    '/assets/aistudio',
+    express.static(path.resolve(__dirname, 'public', 'assets', 'aistudio'), {
+      maxAge: '7d',
+      etag: true,
+    })
+  );
 
   // Mount API router
   app.use('/api', apiRouter);
@@ -55,9 +68,28 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // In production, serve static files from dist
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    // In production, serve static files from dist with long-lived immutable cache for hashed bundles
+    app.use(
+      '/assets',
+      express.static(path.resolve(__dirname, 'dist', 'assets'), {
+        maxAge: '1y',
+        immutable: true,
+        etag: true,
+      })
+    );
+    app.use(
+      express.static(path.resolve(__dirname, 'dist'), {
+        maxAge: '7d',
+        etag: true,
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('index.html')) {
+            res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+          }
+        },
+      })
+    );
     app.get('*', (req, res) => {
+      res.setHeader('Cache-Control', 'no-cache, must-revalidate');
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }

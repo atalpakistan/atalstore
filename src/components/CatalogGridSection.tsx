@@ -1,29 +1,47 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, Filter, RotateCcw, ChevronDown, Check, Loader2 } from 'lucide-react';
 import { Product, Category } from '../types';
 import { ProductCard } from './ProductCard';
+import {
+  fetchCatalogWithCache,
+  getCachedCatalog,
+  getCatalogFilterState,
+  saveCatalogFilterState,
+} from '../utils/pageCache';
 
 interface CatalogGridSectionProps {
   categories: Category[];
   initialCategorySlug?: string | null;
+  initialProducts?: Product[];
   onSelectProduct: (product: Product) => void;
 }
 
 export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
   categories,
   initialCategorySlug,
+  initialProducts,
   onSelectProduct,
 }) => {
-  const [products, setProducts] = useState<Product[]>([]);
+  const savedFilters = getCatalogFilterState();
+  const [products, setProducts] = useState<Product[]>(() => initialProducts || []);
   const [loading, setLoading] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>(initialCategorySlug || '');
-  const [selectedSubcategory, setSelectedSubcategory] = useState<string>('');
-  const [priceSort, setPriceSort] = useState<'newest' | 'price_asc' | 'price_desc' | 'popular'>('newest');
-  const [maxPriceFilter, setMaxPriceFilter] = useState<number | ''>('');
-  const [page, setPage] = useState(1);
+  const [searchTerm, setSearchTerm] = useState(() => savedFilters?.searchTerm || '');
+  const [selectedCategory, setSelectedCategory] = useState<string>(() =>
+    initialCategorySlug !== undefined ? initialCategorySlug || '' : savedFilters?.selectedCategory || ''
+  );
+  const [selectedSubcategory, setSelectedSubcategory] = useState<string>(
+    () => (initialCategorySlug ? '' : savedFilters?.selectedSubcategory || '')
+  );
+  const [priceSort, setPriceSort] = useState<'newest' | 'price_asc' | 'price_desc' | 'popular'>(
+    () => savedFilters?.priceSort || 'newest'
+  );
+  const [maxPriceFilter, setMaxPriceFilter] = useState<number | ''>(
+    () => savedFilters?.maxPriceFilter ?? ''
+  );
+  const [page, setPage] = useState(() => savedFilters?.page || 1);
   const [totalPages, setTotalPages] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(() => initialProducts?.length || 0);
+  const requestSeqRef = useRef(0);
 
   // Sync initialCategorySlug when prop changes
   useEffect(() => {
@@ -34,24 +52,56 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
     }
   }, [initialCategorySlug]);
 
+  // Persist filter state for route restoration
+  useEffect(() => {
+    saveCatalogFilterState({
+      searchTerm,
+      selectedCategory,
+      selectedSubcategory,
+      priceSort,
+      maxPriceFilter,
+      page,
+    });
+  }, [searchTerm, selectedCategory, selectedSubcategory, priceSort, maxPriceFilter, page]);
+
   const activeCategoryObj = categories.find((c) => c.slug === selectedCategory);
 
-  const fetchCatalog = async (pageToFetch?: number) => {
-    setLoading(true);
-    const targetPage = typeof pageToFetch === 'number' ? pageToFetch : page;
-    try {
-      const params = new URLSearchParams();
-      if (searchTerm.trim()) params.set('search', searchTerm.trim());
-      if (selectedCategory) params.set('category', selectedCategory);
-      if (selectedSubcategory) params.set('subcategory', selectedSubcategory);
-      if (maxPriceFilter) params.set('max_price', String(maxPriceFilter));
-      params.set('sort', priceSort);
-      params.set('page', String(targetPage));
-      params.set('limit', '12');
+  const buildQueryString = (targetPage: number) => {
+    const params = new URLSearchParams();
+    if (searchTerm.trim()) params.set('search', searchTerm.trim());
+    if (selectedCategory) params.set('category', selectedCategory);
+    if (selectedSubcategory) params.set('subcategory', selectedSubcategory);
+    if (maxPriceFilter) params.set('max_price', String(maxPriceFilter));
+    params.set('sort', priceSort);
+    params.set('page', String(targetPage));
+    params.set('limit', '12');
+    return params.toString();
+  };
 
-      const res = await fetch(`/api/products?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
+  const fetchCatalog = async (pageToFetch?: number, forceFresh = false) => {
+    const targetPage = typeof pageToFetch === 'number' ? pageToFetch : page;
+    const queryString = buildQueryString(targetPage);
+    const reqId = ++requestSeqRef.current;
+
+    const cached = !forceFresh ? getCachedCatalog(queryString) : { data: null, isStale: true };
+    if (cached.data) {
+      setProducts(cached.data.products || []);
+      setTotalPages(cached.data.pagination?.totalPages || 1);
+      setTotalCount(cached.data.pagination?.total || 0);
+      setPage(targetPage);
+      setLoading(false);
+      if (!cached.isStale) return;
+    } else if (
+      products.length === 0 ||
+      targetPage !== 1 ||
+      Boolean(searchTerm.trim() || selectedCategory || selectedSubcategory || maxPriceFilter || priceSort !== 'newest')
+    ) {
+      setLoading(true);
+    }
+
+    try {
+      const data = await fetchCatalogWithCache(queryString, forceFresh || cached.isStale);
+      if (data && reqId === requestSeqRef.current) {
         setProducts(data.products || []);
         setTotalPages(data.pagination?.totalPages || 1);
         setTotalCount(data.pagination?.total || 0);
@@ -60,7 +110,9 @@ export const CatalogGridSection: React.FC<CatalogGridSectionProps> = ({
     } catch {
       // Graceful error fallback
     } finally {
-      setLoading(false);
+      if (reqId === requestSeqRef.current) {
+        setLoading(false);
+      }
     }
   };
 

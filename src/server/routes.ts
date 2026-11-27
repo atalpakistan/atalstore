@@ -121,6 +121,8 @@ function formatPublicSettings(rows: { key: string; value: string }[]): Record<st
 
 router.get(['/config', '/settings'], (req, res) => {
   try {
+    const isFresh = req.query.fresh === '1';
+    res.setHeader('Cache-Control', isFresh ? 'no-store' : 'public, max-age=30, stale-while-revalidate=120');
     const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
     const settings = formatPublicSettings(rows);
     res.json(settings);
@@ -131,6 +133,8 @@ router.get(['/config', '/settings'], (req, res) => {
 
 router.get('/homepage', (req, res) => {
   try {
+    const isFresh = req.query.fresh === '1';
+    res.setHeader('Cache-Control', isFresh ? 'no-store' : 'public, max-age=30, stale-while-revalidate=120');
     // 1. Settings
     const settingRows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
     const settings = formatPublicSettings(settingRows);
@@ -237,6 +241,8 @@ router.get('/homepage', (req, res) => {
 
 router.get('/categories', (req, res) => {
   try {
+    const isFresh = req.query.fresh === '1';
+    res.setHeader('Cache-Control', isFresh ? 'no-store' : 'public, max-age=60, stale-while-revalidate=180');
     const cats = db.prepare('SELECT * FROM categories ORDER BY display_order ASC').all() as any[];
     for (const c of cats) {
       c.subcategories = db.prepare('SELECT * FROM subcategories WHERE category_id = ? ORDER BY display_order ASC').all(c.id);
@@ -255,6 +261,8 @@ router.get('/categories', (req, res) => {
 
 router.get('/products', (req, res) => {
   try {
+    const isFresh = req.query.fresh === '1';
+    res.setHeader('Cache-Control', isFresh ? 'no-store' : 'public, max-age=30, stale-while-revalidate=120');
     const {
       search,
       category,
@@ -354,6 +362,8 @@ router.get('/products', (req, res) => {
 // Unique Product URL Resolution with Redirect Support
 router.get('/products/:slug', (req, res) => {
   try {
+    const isFresh = req.query.fresh === '1';
+    res.setHeader('Cache-Control', isFresh ? 'no-store' : 'public, max-age=30, stale-while-revalidate=120');
     const slug = req.params.slug;
 
     // First direct lookup by slug or ID
