@@ -74,7 +74,7 @@ export const Header: React.FC<HeaderProps> = ({
               onClick={onNavigateHome}
               className="flex items-center gap-2.5 text-left group focus:outline-none"
             >
-              <AnimatedLogo logoUrl={settings?.header_logo_url} variant="header" />
+              <AnimatedLogo logoUrl={settings?.header_logo_url} />
               <div className="flex flex-col">
                 <span className="font-display font-bold text-xl sm:text-2xl tracking-wider text-amber-300 group-hover:text-amber-200 transition-colors">
                   ATAL

@@ -28,7 +28,6 @@ import { CustomerDashboard } from './components/CustomerDashboard';
 import { PWAInstallButton } from './components/PWAInstallButton';
 
 import { Product, ProductVariant, HomepagePayload, StoreSettings } from './types';
-import { AnimatedLogo } from './components/AnimatedLogo';
 
 function StorefrontApp() {
   const { user, isAdmin, openAuthModal } = useAuth();
@@ -87,7 +86,15 @@ function StorefrontApp() {
   };
 
   useEffect(() => {
-    fetchHomepage();
+    const maxLoadingTimer = window.setTimeout(() => {
+      setLoadingHomepage(false);
+    }, 2000);
+
+    fetchHomepage().finally(() => {
+      window.clearTimeout(maxLoadingTimer);
+    });
+
+    return () => window.clearTimeout(maxLoadingTimer);
   }, []);
 
   const navigateTo = (path: string) => {
@@ -248,10 +255,17 @@ function StorefrontApp() {
           /* HOMEPAGE IN EXACT SPECIFIED SECTION ORDER */
           <div>
             {loadingHomepage ? (
-              <div className="py-24 flex flex-col items-center justify-center text-slate-500 gap-4">
-                <AnimatedLogo logoUrl={homepageData?.settings?.header_logo_url} variant="loader" />
-                <p className="text-xs font-semibold tracking-wide text-[#093824]">
-                  ATAL STORE — Smart Shop. Live Better...
+              <div
+                className="py-24 px-4 flex flex-col items-center justify-center bg-slate-50 gap-3.5"
+                role="status"
+                aria-live="polite"
+              >
+                <div className="atal-loader-ring" aria-hidden="true" />
+                <div className="atal-loader-track" aria-hidden="true">
+                  <div className="atal-loader-bar" />
+                </div>
+                <p className="text-xs font-medium tracking-wide text-slate-600">
+                  Loading...
                 </p>
               </div>
             ) : (
